@@ -224,3 +224,84 @@ reutilizaría silenciosamente para la nueva — hoy no hay ninguna
 verificación que lo detecte. Si en algún momento se necesita soportar
 múltiples bboxes de ERA5-Land en la misma corrida, agregar el bbox a la
 clave elimina el riesgo por completo.
+
+## `openeo` (en `ingestion`)
+
+CLAUDE.md ya nombra "openEO o sentinelhub-py" como las dos opciones
+para acceder a Sentinel-2 vía Copernicus Data Space Ecosystem — no es
+una dependencia sorpresa, pero al no estar en la lista explícita de
+dependencias aprobadas del bootstrap original, se deja constancia:
+`openeo` es el cliente Python oficial del proyecto openEO, necesario
+para construir y ejecutar el grafo de procesamiento (carga + máscara de
+nubes + composición temporal + descarga) contra el backend federado de
+Copernicus Data Space Ecosystem. Ver la siguiente sección para por qué
+se prefirió sobre `sentinelhub-py`.
+
+## Sentinel-2: openEO en vez de sentinelhub-py
+
+Ambos acceden a Copernicus Data Space Ecosystem. Se eligió `openeo`
+porque su autenticación por client credentials
+(`authenticate_oidc_client_credentials(client_id, client_secret)`) usa
+exactamente los dos campos que `shared/config.py` ya tenía desde el
+bootstrap (`copernicus_dataspace_client_id`/`_client_secret`) — cero
+variables de entorno o campos de configuración nuevos. `sentinelhub-py`
+necesita además `sh_base_url` y `sh_token_url` (verificado en su propia
+documentación de configuración), que habrían requerido ampliar
+`shared/config.py`. La API de alto nivel de openEO (`load_collection` +
+`.mask()` + `.reduce_dimension()` + `.download()`) también expresa el
+flujo pedido (cargar, enmascarar nubes, componer, descargar) sin
+necesidad de escribir un evalscript custom, que sí sería necesario con
+la Process API de Sentinel Hub.
+
+## `CLOUD_SCL_CLASSES` duplicado entre `ingestion/sentinel2` y `features/vegetation`
+
+`features/vegetation/ndvi.py` necesita el mismo conjunto de clases SCL
+de nube ({3,8,9,10}) que `ingestion/sentinel2/client.py` ya define, para
+poder re-aplicar el enmascarado localmente (ver la sección de
+Sentinel-2 en `docs/data-sources.md`). Importarlo desde `ingestion`
+invertiría la dependencia features->ingestion — la única dirección ya
+aceptada es la contraria (`ingestion` depende de `features` para
+`ingestion/dem/cli.py` y `ingestion/era5/cli.py`, ver más arriba). Se
+duplica el frozenset de 4 enteros en ambos archivos, documentado en
+ambos, en vez de agregar una dependencia cruzada nueva por una
+constante tan pequeña.
+
+## Cierre de Etapa 1 (P1-P4): decisiones de reproyección y remuestreo
+
+Resumen de las decisiones tomadas en los cinco módulos de ingesta
+implementados hasta ahora (FIRMS, DEM, ERA5-Land, Sentinel-2,
+WorldCover):
+
+| Fuente | CRS destino | Resolución | Remuestreo | Por qué |
+|---|---|---|---|---|
+| Copernicus DEM | EPSG:32719 | 250 m | Bilineal | Elevación es continua; nearest produce escalones artificiales. |
+| ERA5-Land | EPSG:32719 | 250 m | Bilineal | Viento/temperatura/humedad/precipitación son continuos. |
+| Sentinel-2 (NDVI) | EPSG:32719 | 250 m | Bilineal | NDVI es una magnitud continua derivada de reflectancia. |
+| ESA WorldCover | EPSG:32719 | 250 m | **Nearest** | Códigos de clase categóricos — interpolar fabricaría clases inexistentes. |
+| NASA FIRMS | (sin reproyectar) | — | — | Puntos de detección en WGS84; la reproyección a grilla es tarea de `features/fire_state/` (pendiente). |
+
+Decisión transversal: **todas** las fuentes rasterizadas comparten el
+mismo CRS de destino (`EPSG:32719`, UTM 19S) y la misma resolución
+nominal (250 m, configurable en `shared/config.py`), pero **cada una
+reproyecta de forma independiente** — no hay todavía una grilla
+canónica compartida que garantice alineación píxel-a-píxel exacta
+entre capas (mismo origen, mismo ancho/alto). Esto es una limitación
+conocida y diferida a `features/grid/` (todavía sin implementar, ver
+`docs/limitations.md`): hasta que exista, dos capas de este proyecto
+con el mismo CRS/resolución nominal pueden tener orígenes de píxel
+ligeramente distintos, y superponerlas exactamente requiere un
+remuestreo adicional de alineación en el consumidor (p. ej.
+`features/dataset/`, también pendiente).
+
+Patrón repetido de errores encontrados en revisiones finales sucesivas
+(FIRMS, DEM, ERA5-Land) que este cierre deja documentado para el
+próximo módulo de ingesta: (1) nodata sin forzar explícitamente permite
+que huecos del mosaico se lean como `0.0` fabricado — DEM y WorldCover
+ya lo corrigen desde el diseño inicial; (2) grillas de tiles con
+esquema semiabierto necesitan `ceil(x)-1` para el límite superior, no
+`floor()` — DEM lo corrigió en revisión, WorldCover lo aplicó desde el
+principio; (3) un módulo sin comando de CLI ni target de Makefile real
+es, en la práctica, código muerto que ningún test de integración
+ejercita — FIRMS/DEM/ERA5-Land lo corrigieron en revisión,
+Sentinel-2/WorldCover lo incluyen desde el principio (ver Task 6 del
+plan de este módulo).

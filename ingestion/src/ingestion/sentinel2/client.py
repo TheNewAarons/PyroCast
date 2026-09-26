@@ -64,10 +64,10 @@ class Sentinel2Client:
         )
 
         scl_band = datacube.band("SCL")
-        cloud_mask = None
-        for cloud_class in CLOUD_SCL_CLASSES:
-            class_mask = scl_band != cloud_class
-            cloud_mask = class_mask if cloud_mask is None else (cloud_mask & class_mask)
+        cloud_classes = list(CLOUD_SCL_CLASSES)
+        cloud_mask = scl_band != cloud_classes[0]
+        for cloud_class in cloud_classes[1:]:
+            cloud_mask = cloud_mask & (scl_band != cloud_class)
         mask_resampled = cloud_mask.resample_cube_spatial(datacube)
         masked = datacube.mask(mask_resampled)
 

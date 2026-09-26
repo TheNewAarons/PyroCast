@@ -8,175 +8,242 @@ MODIS 1 km vía `--sensor` (`MODIS_NRT`/`MODIS_SP`); LANDSAT
 (`LANDSAT_NRT`) **es exclusivo de EE.UU./Canadá** y no sirve para Chile
 pese a estar en la lista de `SOURCE` válidos. Solo los sensores
 `VIIRS_*` están probados end-to-end en este proyecto — `MODIS_*` usa
-una escala de `confidence` numérica distinta (ver más abajo) que no se
-ha ejercitado con datos reales.
+una escala de `confidence` numérica distinta que no se ha ejercitado
+con datos reales.
 
-**Cómo obtener el MAP_KEY (gratuito):**
+**Resolución nativa:** 375 m (VIIRS).
+
+**Cómo se obtiene:**
 1. Ir a https://firms.modaps.eosdis.nasa.gov/api/map_key/
 2. Registrar un correo — el MAP_KEY llega por email.
 3. Ponerlo en `.env` como `FIRMS_MAP_KEY=...` (ver `.env.example`).
 
-**Límites de la API (verificados contra la documentación vigente):**
-- `DAY_RANGE` máximo por consulta: **5 días**. `pyrocast-ingest firms`
-  divide automáticamente rangos más largos en múltiples consultas de
-  ≤5 días.
-- Límite de uso: **5000 transacciones / ventana de 10 minutos** por
-  MAP_KEY (hay un endpoint `mapserver/mapkey_status/?MAP_KEY=...` para
-  consultar el uso actual; este proyecto no lo llama todavía — el
-  cliente aplica un rate limit local conservador entre requests en su
-  lugar).
-- El comportamiento documentado ante errores (MAP_KEY inválido,
-  solicitud malformada) es débil — no hay códigos de estado oficiales
-  documentados. El cliente (`ingestion/firms/client.py`) reintenta
-  429/5xx con backoff exponencial, y trata cualquier respuesta 200 que
-  no sea CSV real como un error no reintentable.
+**Cómo se organiza / cacheo:** `DAY_RANGE` máximo por consulta: 5 días
+(`pyrocast-ingest firms` divide rangos más largos automáticamente).
+Límite de uso: 5000 transacciones / 10 min por MAP_KEY. Persistencia
+cruda en Parquet particionado por fecha de descarga
+(`ingestion/firms/storage.py`); no hay cache de "no repetir la misma
+consulta" (cada consulta es un rango de fechas distinto por diseño).
 
-**Limitaciones conocidas de la fuente (no del cliente):**
-- **Resolución 375 m** (VIIRS) — no puede resolver ignición puntual con
-  precisión menor a eso; múltiples focos cercanos pueden fusionarse en
-  una sola detección o viceversa.
-- **Falsos positivos por reflejo solar** ("sun glint") sobre cuerpos de
-  agua y superficies reflectantes, especialmente en ángulos de
-  observación bajos — puede producir detecciones espurias cerca de
-  lagos/embalses/costa que no son incendios reales.
-- **Falsos negativos por cobertura de nubes/humo denso** — el sensor no
-  detecta a través de nubes; un incendio activo bajo una columna de
-  humo densa puede no aparecer en un pase satelital.
-- **Frecuencia de paso limitada**: los satélites polares (VIIRS/MODIS)
-  pasan sobre cualquier punto ~1-4 veces al día — un incendio que se
-  inicia y extingue entre pasadas puede no quedar registrado.
-- **`confidence` no es comparable entre sensores**: VIIRS usa categorías
-  (`l`/`n`/`h` o `low`/`nominal`/`high` según versión de producto),
-  MODIS usa un porcentaje numérico. Este proyecto guarda el valor tal
-  cual (`shared.schemas.FireDetection.confidence: str`), sin intentar
-  unificar la escala.
+**Reproyección y remuestreo:** ninguno — los puntos de detección se
+normalizan a `shared.schemas.FireDetection` (lat/lon en WGS84) sin
+reproyectar; la reproyección a la grilla de trabajo es tarea de
+`features/fire_state/` (aún no implementado).
+
+**Limitaciones conocidas:**
+- Resolución 375 m — no resuelve ignición puntual con más precisión.
+- Falsos positivos por reflejo solar ("sun glint") sobre agua.
+- Falsos negativos bajo cobertura de nubes/humo denso.
+- Frecuencia de paso limitada (~1-4 pases/día).
+- `confidence` no es comparable entre sensores (categórico en VIIRS,
+  numérico en MODIS) — se guarda tal cual, sin unificar escala.
+- El comportamiento documentado ante errores (MAP_KEY inválido) es
+  débil — el cliente trata 429/5xx y errores de transporte como
+  reintentables con backoff, y cualquier 200 que no sea CSV real como
+  error no reintentable.
 
 ## Copernicus DEM GLO-30
 
-**Qué entrega:** modelo de elevación digital global, ~30 m de resolución
-nativa (1 arco-segundo), usado para calcular pendiente y orientación.
-
-**Fuente elegida y por qué:** bucket público de AWS
-(`s3://copernicus-dem-30m`, ver
-https://registry.opendata.aws/copernicus-dem/), servido también sobre
-HTTPS plano sin credenciales — en vez de la API de OpenTopography, que
-exige una API key gratuita adicional y no documenta públicamente sus
-límites de tasa/área. El bucket de AWS no requiere ninguna variable de
-entorno nueva. Ver `docs/decisions.md` para el detalle completo de esta
-decisión.
-
-**Cómo se organiza:** cada tile cubre 1°x1°, nombrado por su esquina
-suroeste (p. ej. `Copernicus_DSM_COG_10_S37_00_W072_00_DEM` cubre
-`[-37,-36) x [-72,-71)`). `pyrocast` descarga solo los tiles que
-intersectan el bbox configurado, los mosaica con `rasterio`, y
-reproyecta el resultado a `EPSG:32719` (UTM 19S) en la resolución de
-`shared/config.py` (250 m por defecto) usando remuestreo **bilineal**
-(nunca "nearest" — nearest produce escalones artificiales en un DEM).
-
-**Cacheo:** el resultado final (mosaico + reproyección) se cachea con
-un nombre que incluye un hash de `(bbox, resolución, CRS)` — si se pide
-el mismo bbox/resolución de nuevo, no se vuelve a descargar ni
-reprocesar nada. Los tiles crudos individuales también se cachean por
-su nombre (son globales/estáticos, reutilizables entre bboxes distintos
-que compartan un tile).
-
-**Pendiente y orientación (fórmula y unidades):** ver
-`features/terrain/slope_aspect.py` — método de Horn (1981), el mismo
-que usan GDAL `gdaldem` y ESRI. Con la ventana 3x3 `a b c / d e f / g h
-i` centrada en el píxel (fila = eje Y hacia el sur, columna = eje X
-hacia el este):
+**Qué entrega:** modelo de elevación digital global, usado para
+calcular pendiente y orientación (`features/terrain/slope_aspect.py`,
+método de Horn 1981 — mismo algoritmo que GDAL `gdaldem` y ESRI):
 
 ```
 dz/dx = ((c + 2f + i) - (a + 2d + g)) / (8 * cellsize_x)
 dz/dy = ((g + 2h + i) - (a + 2b + c)) / (8 * cellsize_y)
-
 slope_deg  = grados(atan(hipot(dz/dx, dz/dy)))          # [0, 90]
 aspect_deg = (grados(atan2(-dz/dx, dz/dy))) mod 360      # [0, 360), -1 si es plana
 ```
+(ventana 3x3 `a b c / d e f / g h i`; pendiente en grados, orientación
+en grados de rumbo horario desde el norte).
 
-Pendiente en **grados** (0-90). Orientación en **grados de rumbo**
-(0-360, sentido horario desde el norte: 0=N, 90=E, 180=S, 270=O), con
-**-1** para celdas planas. Se calculan sobre el DEM ya reproyectado a
-EPSG:32719 (metros) — `compute_and_save_terrain` rechaza explícitamente
-un DEM en CRS geográfico (grados), porque el tamaño de celda en metros
-variaría con la latitud y la pendiente quedaría mal calculada.
+**Resolución nativa:** ~30 m (1 arco-segundo).
 
-**Manejo de nodata:** los tiles reales de Copernicus DEM declaran
-`nodata=None` — sin un valor propio, cualquier hueco del mosaico (tile
-faltante, borde del área pedida) se rellenaría con `0.0` sin marcar, y
-`features/terrain` lo leería como terreno real a nivel del mar. El
-pipeline fuerza un nodata propio (`-32767.0` para el DEM, `-9999.0`
-para pendiente/orientación) y lo propaga; las celdas cuya elevación de
-origen es nodata se marcan como nodata en la salida, no se fabrica un
-valor.
+**Cómo se obtiene:** bucket público de AWS
+(`s3://copernicus-dem-30m`), sin credenciales — HTTPS plano. Elegido
+sobre la API de OpenTopography (exige API key adicional, límites de
+tasa no documentados públicamente); ver `docs/decisions.md`.
+
+**Cómo se organiza / cacheo:** tiles de 1°x1°, nombrados por esquina
+suroeste (semiabierto: `[lat,lat+1) x [lon,lon+1)`). Un tile faltante
+(hueco de GLO-30 Public, u oceánico) no aborta el mosaico completo — se
+tolera y queda marcado con nodata. Resultado final (mosaico +
+reproyección) cacheado por hash de `(bbox, resolución, CRS)`; tiles
+crudos cacheados por su nombre (reutilizables entre bboxes).
+
+**Reproyección y remuestreo:** reproyectado a `EPSG:32719` (UTM 19S) en
+la resolución de `shared/config.py` (250 m por defecto) con remuestreo
+**bilineal** (nunca nearest — produciría escalones artificiales en una
+magnitud continua como elevación).
 
 **Limitaciones conocidas:**
-- **GLO-30 Public tiene huecos**: una fracción de tiles globales no
-  está liberada públicamente por el programa Copernicus (variante
-  `COP-DEM-GLO-30-R` vs. `Public`), y los tiles oceánicos genuinamente
-  no existen (verificado: varios tiles costeros/oceánicos cercanos al
-  área de estudio devuelven 404). El pipeline tolera tiles individuales
-  faltantes (quedan como hueco marcado con nodata) y solo falla si
-  **ningún** tile del bbox pudo descargarse.
-- **Bordes de huecos de datos no son confiables**: una celda cuya
-  elevación de origen es nodata se marca como nodata en la salida, pero
-  las celdas VECINAS a ese hueco siguen usando el hueco dentro de su
-  kernel 3x3 — su pendiente/orientación calculada no es confiable.
-- **Salida no recortada al bbox exacto ni anclada a una grilla
-  canónica**: el resultado cubre el mosaico completo de tiles enteros
-  (puede exceder el bbox pedido), y el origen de la grilla de 250 m sale
-  de los bounds reproyectados, no de un ancla fija — dos bboxes distintos
-  dentro del mismo conjunto de tiles hoy producen rasters con orígenes
-  de píxel distintos. Diferido a `features/grid/` (aún no implementado),
-  que debe definir la grilla canónica de 250 m que todas las fuentes
-  compartan.
-- **Resolución nativa ~30 m, remuestreada a 250 m**: se pierde detalle
-  de microrelieve; consistente con la simplificación deliberada de
-  resolución ya documentada para todo el proyecto (ver limitations.md).
+- GLO-30 Public tiene huecos de cobertura; tiles oceánicos genuinamente
+  no existen (verificado: varios 404 reales cerca del área de estudio).
+- Los tiles reales declaran `nodata=None` — se fuerza un nodata propio
+  (`-32767.0` DEM, `-9999.0` pendiente/orientación) en todo el pipeline;
+  sin esto, huecos se rellenarían con `0.0` sin marcar (terreno
+  fabricado a nivel del mar).
+- Celdas vecinas a un hueco de datos no son confiables (el kernel de
+  Horn 3x3 sigue usando el hueco).
+- Salida no recortada al bbox exacto ni anclada a una grilla canónica
+  compartida entre fuentes — diferido a `features/grid/` (sin
+  implementar).
+- Resolución nativa ~30 m, remuestreada a 250 m — se pierde detalle de
+  microrelieve.
 
 ## ERA5-Land (Copernicus CDS)
 
 **Qué entrega:** reanálisis de viento, temperatura, humedad y
-precipitación, resolución nativa ~9 km, agregado a diario por este
-proyecto: media para temperatura/punto de rocío/viento. Para
-precipitación, **el total diario NO es la suma de las 24 muestras
-horarias** — ERA5-Land acumula `tp` de forma corrida desde las 00 UTC
-de cada día (verificado contra la documentación de ECMWF), así que el
-total real del día d es la muestra de (d+1) a las 00 UTC. Sumar las 24
-muestras horarias del día sobreconté por ~11-12x y mezcla el acumulado
-del día anterior — un error real encontrado y corregido en la revisión
-final de este módulo.
+precipitación, agregado a diario por este proyecto: media para
+temperatura/punto de rocío/viento. Para precipitación, **el total
+diario NO es la suma de las 24 muestras horarias** — ERA5-Land acumula
+`tp` de forma corrida desde las 00 UTC de cada día (verificado contra
+la documentación de ECMWF), así que el total real del día d es la
+muestra de (d+1) a las 00 UTC. Sumar las 24 muestras horarias del día
+sobrecuenta por ~11-12x y mezcla el acumulado del día anterior — un
+error real encontrado y corregido en la revisión final de este módulo.
+Se pide el dataset horario crudo (`reanalysis-era5-land`), no el
+derivado de estadísticas diarias de CDS, porque este último excluye
+variables acumuladas (incluida precipitación total).
 
-**Cómo obtener la API key (gratuita):**
+**Resolución nativa:** ~9 km.
+
+**Cómo se obtiene:**
 1. Crear cuenta en https://cds.climate.copernicus.eu/
-2. Ir a tu perfil y copiar el "Personal Access Token".
-3. Ponerlo en `.env` como `CDS_API_KEY=...` y `CDS_API_URL=https://cds.climate.copernicus.eu/api`
-   (ver `.env.example`). Este proyecto pasa `url`/`key` directo al
-   constructor de `cdsapi.Client` — nunca escribe `~/.cdsapirc`.
+2. Copiar el "Personal Access Token" del perfil.
+3. Ponerlo en `.env` como `CDS_API_KEY=...` y
+   `CDS_API_URL=https://cds.climate.copernicus.eu/api`. Este proyecto
+   pasa `url`/`key` directo al constructor de `cdsapi.Client` — nunca
+   escribe `~/.cdsapirc`.
 
-**Naturaleza asíncrona de las solicitudes (importante):** CDS encola
-cada solicitud; puede tardar **minutos u horas** según la carga del
-servicio, no segundos. `ingestion/era5/client.py` implementa su propio
-polling con timeout configurable (`timeout_seconds`, por defecto 1
-hora) — la propia librería `cdsapi`, en su modo por defecto, no tiene
-ningún límite de espera total (se verificó leyendo su código fuente).
+**Cómo se organiza / cacheo:** las solicitudes a CDS son asíncronas
+(encoladas) — `ingestion/era5/client.py` implementa su propio polling
+con timeout configurable (por defecto 1 hora); `cdsapi` en su modo por
+defecto no tiene límite de espera total (verificado en su código
+fuente). Puede tardar minutos u horas según la carga del servicio. Un
+rango de fechas que cruza un límite de mes/año se parte en una
+solicitud por mes calendario (`ingestion/era5/client.py:month_chunks`)
+— las listas `year`/`month`/`day` de CDS producen el producto
+cartesiano si no se hace esto, lo que puede pedir fechas futuras
+inexistentes. Cacheo por hash de `(rango de fechas, variables
+solicitadas)` — el bbox no forma parte de la clave (se asume el bbox de
+estudio fijo del proyecto).
 
-**Por qué `reanalysis-era5-land` (horario) y no
-`derived-era5-land-daily-statistics`:** el dataset de estadísticas
-diarias de CDS **omite variables acumuladas, incluyendo precipitación
-total** — inútil para este proyecto, que la requiere. Se pide el
-dataset horario crudo y se agrega a diario en `ingestion/era5/aggregate.py`.
+**Reproyección y remuestreo:** reproyectado a `EPSG:32719` en la
+resolución de trabajo con remuestreo **bilineal** (magnitudes
+continuas). `features/weather/derive.py` también deriva velocidad/
+dirección del viento desde u/v y humedad relativa aproximada desde
+temperatura/punto de rocío (Magnus-Tetens, coeficientes de Alduchov &
+Eskridge 1996 — válida -40°C a 50°C, error máximo documentado ±0.4%
+RH, recortada a [0,100] porque ERA5-Land puede entregar Td > T).
 
-**Downscaling — limitación central, no un detalle:** ERA5-Land tiene
-~9 km de resolución nativa. Se reproyecta y remuestrea a la grilla de
-250 m del proyecto mediante interpolación **bilineal**
-(`features/weather/derive.py`). **Esto es downscaling por
-interpolación, no una modelación física de procesos de sub-grilla** —
-no introduce detalle real a esa escala, solo suaviza la transición
-entre celdas de 9 km. Ver `docs/limitations.md`.
+**Limitaciones conocidas:**
+- **Downscaling por interpolación, no física**: ~9 km a 250 m es
+  puramente geométrico — no introduce detalle real de sub-grilla.
+- Humedad relativa es una aproximación, no una medición real.
+- Salida no recortada al bbox exacto ni anclada a una grilla canónica
+  compartida entre fuentes — misma limitación que Copernicus DEM,
+  diferida a `features/grid/`.
+- La semántica exacta de "DATE = primer día del rango" en el Area API
+  de FIRMS y el comportamiento de `year`/`month`/`day` de CDS están
+  verificados contra documentación, no contra una llamada real
+  autenticada (este entorno no tiene credenciales reales) — ver
+  `docs/decisions.md`.
 
-**Humedad relativa:** aproximada desde temperatura y punto de rocío con
-la fórmula de Magnus-Tetens (coeficientes de Alduchov & Eskridge, 1996):
-`RH = 100 * exp(17.625*Td/(243.04+Td)) / exp(17.625*T/(243.04+T))` (T,
-Td en °C). Válida entre -40°C y 50°C, error máximo documentado ±0.4% RH
-en ese rango — es una aproximación, no una medición real de humedad.
+## Sentinel-2 L2A (Copernicus Data Space Ecosystem, vía openEO)
+
+**Qué entrega:** composición mensual de menor nubosidad (mediana
+temporal tras enmascarar nubes por SCL) de las bandas B04 (rojo), B08
+(NIR) y SCL (Scene Classification), usada para calcular NDVI —
+`features/vegetation/ndvi.py`:
+
+```
+NDVI = (NIR - RED) / (NIR + RED)          # adimensional, [-1, 1]
+```
+
+**NDVI es un proxy del estado/vigor de la vegetación (verdor,
+actividad fotosintética), NO una medición directa de humedad de
+combustible** — vegetación con NDVI alto puede tener bajo contenido de
+humedad real si está senescente o bajo estrés hídrico no visible en el
+verdor foliar.
+
+**Resolución nativa:** 10 m (B04/B08), 20 m (SCL, remuestreada a 10 m
+por el propio proceso de openEO al combinar bandas).
+
+**Cómo se obtiene:**
+1. Crear cuenta en https://dataspace.copernicus.eu/
+2. Registrar un cliente OAuth en el dashboard de Sentinel Hub Services
+   (ver enlace desde el perfil de Copernicus Data Space Ecosystem).
+3. Poner `COPERNICUS_DATASPACE_CLIENT_ID`/`COPERNICUS_DATASPACE_CLIENT_SECRET`
+   en `.env` (ver `.env.example`) — mismas variables que ya existían en
+   `shared/config.py` desde el bootstrap del proyecto.
+
+**Cómo se organiza / cacheo:** cliente `openeo` (elegido sobre
+`sentinelhub-py` — ver `docs/decisions.md`), autenticado por client
+credentials. Enmascarado de nubes con SCL, clases `{3,8,9,10}` (sombra
+de nube, nube prob. media/alta, cirros delgados), aplicado tanto en el
+proceso openEO (server-side) como localmente en
+`features/vegetation/ndvi.py` (defensa en profundidad, y la única forma
+de testear el enmascarado sin mockear todo el grafo de openEO).
+Cacheado por hash de `(bbox, año, mes)`.
+
+**Reproyección y remuestreo:** NDVI reproyectado a `EPSG:32719` en la
+resolución de trabajo con remuestreo **bilineal** (magnitud continua,
+igual que DEM y ERA5-Land).
+
+**Limitaciones conocidas:**
+- El enmascarado de nubes por SCL no es perfecto — nubes delgadas,
+  sombras difusas o bordes de nube pueden no clasificarse correctamente
+  en el producto L2A de origen.
+- Una composición mensual por mediana puede seguir mostrando artefactos
+  si un mes completo tiene cobertura de nubes muy alta (pocas o ninguna
+  observación clara) — no hay una verificación automática de "cobertura
+  mínima de píxeles válidos" en este bootstrap.
+- No verificado contra una llamada real autenticada a Copernicus Data
+  Space Ecosystem en este entorno (sin credenciales reales disponibles)
+  — el grafo openEO y el mockeo de `openeo.Connection` están verificados
+  contra la documentación y tests unitarios, no contra un pedido real.
+
+## ESA WorldCover
+
+**Qué entrega:** mapa de cobertura de suelo global, usado como proxy de
+tipo de combustible mediante una tabla de mapeo heurística
+(`ingestion/worldcover/fuel_type.py`) — pastizal, matorral, bosque,
+cultivo, humedal, y clases no combustibles (urbano, agua, suelo
+desnudo, nieve/hielo).
+
+**Resolución nativa:** 10 m.
+
+**Cómo se obtiene:** bucket público de AWS
+(`s3://esa-worldcover`), sin credenciales — HTTPS plano, mismo patrón
+que Copernicus DEM.
+
+**Cómo se organiza / cacheo:** tiles de 3°x3°, nombrados por esquina
+suroeste, mismo esquema semiabierto que Copernicus DEM. Un tile
+faltante no aborta el mosaico completo (mismo criterio de tolerancia
+que DEM). Resultado final cacheado por hash de `(bbox, resolución,
+CRS, versión)`.
+
+**Reproyección y remuestreo:** reproyectado a `EPSG:32719` con
+remuestreo **nearest (nunca bilineal)** — los valores son códigos de
+clase categóricos; interpolar produciría clases inexistentes (p. ej.
+promediar Tree cover=10 con Water=80 daría 45, que no es ninguna clase
+real).
+
+**Limitaciones conocidas:**
+- **WorldCover no distingue bosque nativo de plantación forestal**
+  (ambos caen en la clase 10 "Tree cover") — una distinción crítica
+  para el comportamiento del fuego en la zona de estudio (plantaciones
+  de Pinus/Eucalyptus vs. bosque nativo de Nothofagus). Separarlos
+  requeriría una fuente adicional (p. ej. catastro de CONAF), no
+  integrada.
+- La tabla de mapeo a tipo de combustible es una simplificación
+  heurística de una persona, no un sistema de combustibles validado en
+  terreno (Fireline/Behave/Scott-Burgan) — ver el docstring de
+  `fuel_type.py`.
+- Producto de un único año (2021); no captura cambios de uso de suelo
+  posteriores (p. ej. cosecha de plantaciones, incendios previos que ya
+  cambiaron la cobertura).
+- Salida no recortada al bbox exacto ni anclada a una grilla canónica
+  compartida entre fuentes — misma limitación que Copernicus DEM,
+  diferida a `features/grid/`.

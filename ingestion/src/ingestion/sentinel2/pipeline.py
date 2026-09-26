@@ -17,4 +17,5 @@ def fetch_sentinel2(
     target = cache_dir / f"sentinel2_{key}.tif"
     if target.exists():
         return target
-    return client.fetch_monthly_composite(bbox, year, month, target)
+    result: Path = client.fetch_monthly_composite(bbox, year, month, target)
+    return result
