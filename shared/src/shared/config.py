@@ -13,8 +13,31 @@ proyecto — no es un límite administrativo exacto).
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Nombre de la variable de entorno para cada campo de Settings que no
+# tiene un valor por defecto real (todas las credenciales). pydantic
+# reporta el nombre de campo en minúsculas en sus errores; esto traduce
+# de vuelta al nombre de variable de entorno que el usuario realmente
+# tiene que setear.
+_ENV_VAR_BY_FIELD: dict[str, str] = {
+    "firms_map_key": "FIRMS_MAP_KEY",
+    "cds_api_url": "CDS_API_URL",
+    "cds_api_key": "CDS_API_KEY",
+    "copernicus_dataspace_client_id": "COPERNICUS_DATASPACE_CLIENT_ID",
+    "copernicus_dataspace_client_secret": "COPERNICUS_DATASPACE_CLIENT_SECRET",
+    "postgres_host": "POSTGRES_HOST",
+    "postgres_port": "POSTGRES_PORT",
+    "postgres_db": "POSTGRES_DB",
+    "postgres_user": "POSTGRES_USER",
+    "postgres_password": "POSTGRES_PASSWORD",
+}
+
+
+class ConfigurationError(RuntimeError):
+    """Configuración inválida o incompleta, con un mensaje accionable
+    (nombra las variables de entorno exactas que faltan o están vacías)."""
 
 # (min_lon, min_lat, max_lon, max_lat) en WGS84 — envolvente de
 # Biobío + Ñuble + La Araucanía.
@@ -45,22 +68,22 @@ class Settings(BaseSettings):
     data_processed_dir: Path = Path("data/processed")
 
     # NASA FIRMS — https://firms.modaps.eosdis.nasa.gov/api/map_key/
-    firms_map_key: str = Field(...)
+    firms_map_key: str = Field(..., min_length=1)
 
     # Copernicus CDS (ERA5-Land) — https://cds.climate.copernicus.eu/how-to-api
-    cds_api_url: str = Field(...)
-    cds_api_key: str = Field(...)
+    cds_api_url: str = Field(..., min_length=1)
+    cds_api_key: str = Field(..., min_length=1)
 
     # Copernicus Data Space Ecosystem (Sentinel-2) — https://dataspace.copernicus.eu/
-    copernicus_dataspace_client_id: str = Field(...)
-    copernicus_dataspace_client_secret: str = Field(...)
+    copernicus_dataspace_client_id: str = Field(..., min_length=1)
+    copernicus_dataspace_client_secret: str = Field(..., min_length=1)
 
     # PostgreSQL/PostGIS
-    postgres_host: str = Field(...)
+    postgres_host: str = Field(..., min_length=1)
     postgres_port: int = Field(...)
-    postgres_db: str = Field(...)
-    postgres_user: str = Field(...)
-    postgres_password: str = Field(...)
+    postgres_db: str = Field(..., min_length=1)
+    postgres_user: str = Field(..., min_length=1)
+    postgres_password: str = Field(..., min_length=1)
 
     @property
     def postgres_dsn(self) -> str:
@@ -72,4 +95,15 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        missing = sorted(
+            {_ENV_VAR_BY_FIELD.get(str(err["loc"][0]), str(err["loc"][0])) for err in exc.errors()}
+        )
+        raise ConfigurationError(
+            "Faltan variables de entorno requeridas (o están vacías): "
+            + ", ".join(missing)
+            + ". Copia .env.example a .env y complétalas — ese archivo indica "
+            "dónde obtener cada credencial."
+        ) from exc

@@ -22,8 +22,8 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
-      - name: Typecheck (mypy: shared + features)
-        run: uv run mypy shared/src features/src
+      - name: Typecheck (mypy --strict: shared + features)
+        run: uv run mypy --strict shared/src features/src
 
       - name: Test (all workspace members)
         run: |
@@ -32,3 +32,18 @@ jobs:
           uv run --package features pytest features/tests -v
           uv run --package models pytest models/tests -v
           uv run --package serving pytest serving/tests -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No implementation environment used to write this bootstrap had
+      # Docker installed (see docs/decisions.md); this job is what
+      # actually proves the Dockerfile/compose file are correct, on a
+      # runner that does have it, with zero credentials.
+      - name: Validate compose file
+        run: docker compose config
+
+      - name: Build api image
+        run: docker compose build api

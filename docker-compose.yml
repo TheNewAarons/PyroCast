@@ -32,6 +32,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pyrocast}
       POSTGRES_USER: ${POSTGRES_USER:-pyrocast}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      # Deben apuntar dentro del volumen montado abajo (./data:/data), no a
+      # las rutas relativas por defecto de shared.config (que resolverían
+      # contra /app y quedarían fuera del volumen).
+      DATA_RAW_DIR: /data/raw
+      DATA_INTERIM_DIR: /data/interim
+      DATA_PROCESSED_DIR: /data/processed
     volumes:
       - ./data:/data
     depends_on:

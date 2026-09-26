@@ -22,6 +22,14 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   `bbox` es un `String` (no un tipo estructurado) en este bootstrap
   inicial; si se necesita indexar o filtrar espacialmente por bbox más
   adelante, migrar a un tipo estructurado o derivarlo de `geom`.
+- **Permisos del volumen `./data` en Linux**: el contenedor `api` corre
+  como usuario no-root `pyrocast` (uid 1000). Con un bind mount
+  (`./data:/data`), el propietario efectivo dentro del contenedor es el
+  del directorio del host, no el `chown` hecho en el Dockerfile — en
+  macOS/Docker Desktop esto normalmente funciona sin fricción, pero en
+  Linux con un host cuyo uid de usuario no sea 1000 puede producir
+  errores de permiso al escribir en `/data`. Si eso ocurre, ajustar los
+  permisos de `./data` en el host (o cambiar a un volumen nombrado).
 - **`docker compose up` no verificado end-to-end**: el bootstrap inicial
   se hizo en un entorno sin Docker instalado (ver `docs/decisions.md`).
   El Dockerfile y compose se revisaron estáticamente y se simuló la

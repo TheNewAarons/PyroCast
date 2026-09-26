@@ -22,6 +22,13 @@ COPY --from=builder /build/.venv /app/.venv
 COPY serving/src /app/serving/src
 COPY shared/src /app/shared/src
 
+# /data es el punto de montaje esperado por docker-compose.yml
+# (./data:/data + DATA_RAW_DIR=/data/raw, etc.). Se crea y se cede a
+# pyrocast aquí para el caso de volumen nombrado o de correr la imagen
+# sin compose; con un bind mount de host, el propietario real lo decide
+# el directorio del host (ver docs/limitations.md).
+RUN mkdir -p /data && chown -R pyrocast:pyrocast /app /data
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/shared/src:/app/serving/src"
 

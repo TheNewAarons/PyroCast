@@ -20,10 +20,25 @@
 ## Alcance de mypy --strict
 
 Por decisión explícita de CLAUDE.md, `mypy --strict` corre solo sobre
-`shared/` y `features/`. `ingestion/`, `models/` y `serving/` corren mypy
-en modo no estricto (vía el override global en el `pyproject.toml` raíz)
-hasta que haya código real que tipar con disciplina — no tiene sentido
-exigir `--strict` sobre paquetes que hoy son solo stubs.
+`shared/` y `features/`. Esto se implementa pasando `--strict` en la
+línea de comandos (`Makefile` target `typecheck`, y el mismo comando en
+`.github/workflows/ci.yml`), apuntando solo a `shared/src features/src`
+— no vía `[[tool.mypy.overrides]] strict = true` en `pyproject.toml`,
+porque `strict` no es una opción real por-módulo en mypy: un override
+que la fija en `true` para `shared.*`/`features.*` termina activando el
+flag globalmente para toda invocación de `mypy` en el repo (verificado:
+un módulo fuera de esos paquetes empezaba a fallar con `no-untyped-def`
+hasta que se quitó el override). `ingestion/`, `models/` y `serving/`
+así quedan realmente sin `--strict` hasta que haya código real que
+tipar con disciplina.
+
+Nota de proceso: el `pyproject.toml` también declara
+`plugins = ["pydantic.mypy"]` bajo `[tool.mypy]` — sin él, `mypy
+--strict` falla con `call-arg` sobre `Settings()` en
+`shared/config.py`, porque no reconoce que una subclase de
+`BaseSettings` de pydantic-settings puede construirse sin argumentos
+(los campos requeridos vienen de variables de entorno en tiempo de
+ejecución, no del constructor). El plugin le enseña eso a mypy.
 
 ## `tests/` por miembro del workspace, no un único directorio raíz
 
@@ -48,12 +63,15 @@ entorno.
 ## Entorno de este bootstrap no tenía Docker instalado
 
 Este primer commit del monorepo se hizo en un entorno sin el binario
-`docker` disponible. El `Dockerfile` y `docker-compose.yml` se validaron
-por inspección estática y simulando el paso `uv sync --frozen --package
-shared --package serving --no-dev` fuera de Docker (confirmando que
-resuelve e instala correctamente sin los manifiestos de `ingestion`,
-`features` y `models`, y que la app FastAPI resultante responde
-`/healthz`), pero **no se corrió `docker compose up` real**. Un
-desarrollador con Docker instalado debe validar `make up` y el healthcheck
-del contenedor antes de asumir que el criterio de aceptación
-correspondiente está probado end-to-end.
+`docker` disponible. El `Dockerfile` y `docker-compose.yml` se
+revisaron por inspección estática, y se simuló fuera de Docker el paso
+`uv sync --frozen --package shared --package serving --no-dev` en un
+directorio aparte que no tenía los manifiestos de `ingestion`,
+`features` ni `models` (confirmando que resuelve e instala igual) y se
+verificó que la app FastAPI resultante responde `/healthz` **a través
+del `TestClient` en ese entorno virtual copiado, no dentro de una
+imagen construida** — eso sigue sin probarse. **No se corrió `docker
+compose up` real, ni se construyó la imagen con `docker build`.** Un
+desarrollador con Docker instalado debe validar `make up` y el
+healthcheck del contenedor antes de asumir que el criterio de
+aceptación correspondiente está probado end-to-end.
