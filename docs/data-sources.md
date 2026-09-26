@@ -50,3 +50,54 @@ ha ejercitado con datos reales.
   MODIS usa un porcentaje numérico. Este proyecto guarda el valor tal
   cual (`shared.schemas.FireDetection.confidence: str`), sin intentar
   unificar la escala.
+
+## Copernicus DEM GLO-30
+
+**Qué entrega:** modelo de elevación digital global, ~30 m de resolución
+nativa (1 arco-segundo), usado para calcular pendiente y orientación.
+
+**Fuente elegida y por qué:** bucket público de AWS
+(`s3://copernicus-dem-30m`, ver
+https://registry.opendata.aws/copernicus-dem/), servido también sobre
+HTTPS plano sin credenciales — en vez de la API de OpenTopography, que
+exige una API key gratuita adicional y no documenta públicamente sus
+límites de tasa/área. El bucket de AWS no requiere ninguna variable de
+entorno nueva. Ver `docs/decisions.md` para el detalle completo de esta
+decisión.
+
+**Cómo se organiza:** cada tile cubre 1°x1°, nombrado por su esquina
+suroeste (p. ej. `Copernicus_DSM_COG_10_S37_00_W072_00_DEM` cubre
+`[-37,-36) x [-72,-71)`). `pyrocast` descarga solo los tiles que
+intersectan el bbox configurado, los mosaica con `rasterio`, y
+reproyecta el resultado a `EPSG:32719` (UTM 19S) en la resolución de
+`shared/config.py` (250 m por defecto) usando remuestreo **bilineal**
+(nunca "nearest" — nearest produce escalones artificiales en un DEM).
+
+**Cacheo:** el resultado final (mosaico + reproyección) se cachea con
+un nombre que incluye un hash de `(bbox, resolución, CRS)` — si se pide
+el mismo bbox/resolución de nuevo, no se vuelve a descargar ni
+reprocesar nada. Los tiles crudos individuales también se cachean por
+su nombre (son globales/estáticos, reutilizables entre bboxes distintos
+que compartan un tile).
+
+**Pendiente y orientación:** ver `features/terrain/slope_aspect.py` —
+método de Horn (1981), el mismo que usan GDAL `gdaldem` y ESRI. Pendiente
+en grados (0-90), orientación en grados de rumbo (0-360, sentido
+horario desde el norte, -1 para celdas planas). Se calculan sobre el
+DEM ya reproyectado a EPSG:32719 (metros), nunca sobre el DEM crudo en
+grados — de lo contrario el tamaño de celda en metros variaría con la
+latitud y la pendiente quedaría mal calculada.
+
+**Limitaciones conocidas:**
+- **GLO-30 Public tiene huecos**: una fracción de tiles globales no
+  está liberada públicamente por el programa Copernicus (variante
+  `COP-DEM-GLO-30-R` vs. `Public`); si el área de estudio cayera en uno
+  de esos huecos, la descarga fallaría con 404 — no verificado
+  exhaustivamente para Biobío/Ñuble/Araucanía en este bootstrap.
+- **Sin manejo de nodata en el cálculo de pendiente/orientación**: el
+  kernel de Horn usa relleno de borde ("edge padding") pero no
+  enmascara nodata — celdas cerca de huecos de datos producirán
+  valores de pendiente/orientación no confiables.
+- **Resolución nativa ~30 m, remuestreada a 250 m**: se pierde detalle
+  de microrelieve; consistente con la simplificación deliberada de
+  resolución ya documentada para todo el proyecto (ver limitations.md).

@@ -99,3 +99,24 @@ introspecciona las opciones del CLI. La regla `B008` de `flake8-bugbear`
 "llamada a función como valor por defecto mutable", pero aquí es el uso
 previsto por el framework, no un bug. Se ignora `B008` específicamente
 para `**/cli.py` en vez de deshabilitar la regla globalmente.
+
+## Copernicus DEM: bucket público de AWS en vez de OpenTopography
+
+CLAUDE.md permite ambas opciones. Se eligió el bucket de AWS
+(`copernicus-dem-30m`, https://registry.opendata.aws/copernicus-dem/)
+verificando en vivo (2026-09-26) que es completamente público sobre
+HTTPS plano (`curl -sI` sobre `tileList.txt` y sobre una URL de tile
+real devuelven `200 OK` sin ningún header de autenticación). Esto evita:
+una variable de entorno de credencial nueva, un campo nuevo en
+`shared/config.Settings`, una dependencia de `boto3`/AWS SDK (una
+petición HTTP plana con `requests` basta), y un límite de tasa/área no
+documentado (el de OpenTopography no se encontró públicamente). La
+grilla de tiles (1°x1°, nombrados por esquina suroeste) es matemática
+simple y determinística — no hay necesidad de una API de recorte por
+bbox del lado del servidor cuando se pueden calcular exactamente los
+tiles necesarios.
+
+`rasterio`/`numpy` ya estaban aprobados por CLAUDE.md y ya declarados en
+`features`; se agregaron también a `ingestion` (mosaico/reproyección de
+tiles ocurre ahí) — declaración de dependencia normal, no una
+dependencia externa nueva.
