@@ -75,3 +75,27 @@ compose up` real, ni se construyó la imagen con `docker build`.** Un
 desarrollador con Docker instalado debe validar `make up` y el
 healthcheck del contenedor antes de asumir que el criterio de
 aceptación correspondiente está probado end-to-end.
+
+## Dependencias añadidas en la implementación de ingestion/firms/
+
+- **`pyarrow`** (en `ingestion`): necesaria para escribir Parquet crudo
+  (persistencia de respuestas de FIRMS tal cual, sin normalizar). Se
+  eligió `pyarrow` puro (parseo manual del CSV con el módulo estándar
+  `csv` + `pyarrow.Table`) en vez de `pandas` + un engine de Parquet,
+  para no añadir una dependencia pesada que `ingestion` no necesita para
+  nada más — el parseo real a un esquema tipado ocurre después, en
+  `ingestion/firms/parser.py`, usando `shared.schemas.FireDetection`.
+- **`pydantic`** (en `shared`, ahora explícito): ya estaba resuelto de
+  forma transitiva vía `pydantic-settings`, y `shared/config.py` ya lo
+  importaba directamente; esto solo hace explícita una dependencia que
+  ya existía en la práctica, para `shared/schemas.py`.
+
+## `per-file-ignores` de ruff para B008 en archivos `cli.py`
+
+`typer` requiere `typer.Option(...)`/`typer.Argument(...)` como valor
+por defecto de los parámetros de una función de comando — es cómo Typer
+introspecciona las opciones del CLI. La regla `B008` de `flake8-bugbear`
+(que ruff trae vía el grupo `B`) existe para atrapar el error clásico de
+"llamada a función como valor por defecto mutable", pero aquí es el uso
+previsto por el framework, no un bug. Se ignora `B008` específicamente
+para `**/cli.py` en vez de deshabilitar la regla globalmente.
