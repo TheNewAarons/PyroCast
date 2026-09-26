@@ -589,7 +589,9 @@ version = "0.1.0"
 source = { editable = "ingestion" }
 dependencies = [
     { name = "cdsapi" },
+    { name = "numpy" },
     { name = "pyarrow" },
+    { name = "rasterio" },
     { name = "requests" },
     { name = "shared" },
     { name = "typer" },
@@ -604,7 +606,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cdsapi", specifier = ">=0.7" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "pyarrow", specifier = ">=17.0" },
+    { name = "rasterio", specifier = ">=1.3" },
     { name = "requests", specifier = ">=2.32" },
     { name = "shared", editable = "shared" },
     { name = "typer", specifier = ">=0.12" },
