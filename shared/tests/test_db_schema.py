@@ -2,10 +2,9 @@
 import os
 
 import pytest
-from sqlalchemy import create_engine, insert, select, text
-
 from shared.config import Settings
 from shared.db.schema import evaluation_result, fire_event, metadata, model_run
+from sqlalchemy import create_engine, insert, select, text
 
 
 def test_metadata_has_expected_tables():

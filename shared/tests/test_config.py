@@ -2,9 +2,7 @@
 explícito si faltan credenciales requeridas."""
 import pytest
 from pydantic import ValidationError
-
 from shared.config import Settings
-
 
 REQUIRED_ENV = {
     "FIRMS_MAP_KEY": "test-firms-key",

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: uv sync
+        run: uv sync --all-packages --group dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Typecheck (mypy: shared + features)
+        run: uv run mypy shared/src features/src
+
+      - name: Test (all workspace members)
+        run: |
+          uv run --package shared pytest shared/tests -v
+          uv run --package ingestion pytest ingestion/tests -v
+          uv run --package features pytest features/tests -v
+          uv run --package models pytest models/tests -v
+          uv run --package serving pytest serving/tests -v

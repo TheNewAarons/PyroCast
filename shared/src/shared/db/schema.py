@@ -6,13 +6,13 @@ evaluation_result (métricas de esa ejecución, por split train/val/test).
 """
 from geoalchemy2 import Geometry
 from sqlalchemy import (
+    JSON,
     Column,
     Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     MetaData,
     String,
     Table,

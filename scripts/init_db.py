@@ -5,10 +5,9 @@ Uso: uv run --package serving python scripts/init_db.py create-all
 depende de typer y de shared; scripts/ no es un miembro propio).
 """
 import typer
-from sqlalchemy import create_engine, text
-
 from shared.config import get_settings
 from shared.db.schema import metadata
+from sqlalchemy import create_engine, text
 
 app = typer.Typer()
 
