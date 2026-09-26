@@ -253,18 +253,33 @@ flujo pedido (cargar, enmascarar nubes, componer, descargar) sin
 necesidad de escribir un evalscript custom, que sí sería necesario con
 la Process API de Sentinel Hub.
 
-## `CLOUD_SCL_CLASSES` duplicado entre `ingestion/sentinel2` y `features/vegetation`
+## `CLOUD_SCL_CLASSES` duplicado entre `ingestion/sentinel2` y `features/vegetation` (SUPERSEDIDO)
 
-`features/vegetation/ndvi.py` necesita el mismo conjunto de clases SCL
-de nube ({3,8,9,10}) que `ingestion/sentinel2/client.py` ya define, para
-poder re-aplicar el enmascarado localmente (ver la sección de
-Sentinel-2 en `docs/data-sources.md`). Importarlo desde `ingestion`
-invertiría la dependencia features->ingestion — la única dirección ya
-aceptada es la contraria (`ingestion` depende de `features` para
-`ingestion/dem/cli.py` y `ingestion/era5/cli.py`, ver más arriba). Se
-duplica el frozenset de 4 enteros en ambos archivos, documentado en
-ambos, en vez de agregar una dependencia cruzada nueva por una
-constante tan pequeña.
+Decisión original (durante la implementación del plan): duplicar el
+frozenset de 4 clases SCL en ambos módulos para que
+`features/vegetation/ndvi.py` pudiera re-aplicar el enmascarado
+localmente como "defensa en profundidad", evitando invertir la
+dependencia features->ingestion.
+
+**Superseded en la revisión final** (ver hallazgos C3/C1 de la revisión
+del branch `ingestion/sentinel2+worldcover`, 2026-09-26): la única forma
+de que `ndvi.py` tuviera SCL disponible para re-enmascarar localmente
+era conservar esa banda en el composite descargado — pero SCL es un
+código categórico, y `reduce_dimension(dimension="t", reducer="median")`
+aplicado a esa banda fabrica clases inexistentes (mediana de
+observaciones `[4, 8]` = `6.0`, "Bare soil", que no ocurrió en ninguna
+observación real). La "defensa en profundidad" quedaba operando sobre
+datos ya corrompidos por el propio composite, y encima enmascaraba con
+la lógica invertida (ver hallazgo C1). Se corrigió eliminando SCL del
+composite descargado (se usa solo para construir la máscara
+server-side, con la dirección de comparación corregida: `==`/`|`, "true
+= es nube", no `!=`/`&`) — `ingestion/sentinel2/client.py` es ahora la
+ÚNICA fuente de verdad para el enmascarado de nubes, y
+`CLOUD_SCL_CLASSES` ya no existe en `features/vegetation/ndvi.py`. La
+regla de dirección de dependencia (`ingestion` puede depender de
+`features`, no al revés) sigue vigente y no cambió; lo que cambió es
+que ya no hay una segunda copia que mantener sincronizada, porque ya no
+hay una segunda pasada de enmascarado que hacer.
 
 ## Cierre de Etapa 1 (P1-P4): decisiones de reproyección y remuestreo
 
@@ -305,3 +320,92 @@ es, en la práctica, código muerto que ningún test de integración
 ejercita — FIRMS/DEM/ERA5-Land lo corrigieron en revisión,
 Sentinel-2/WorldCover lo incluyen desde el principio (ver Task 6 del
 plan de este módulo).
+
+## Revisión final de `ingestion/sentinel2`+`ingestion/worldcover`+`features/vegetation`: hallazgos y correcciones (2026-09-26)
+
+La revisión de branch completo encontró 3 hallazgos Críticos y 9
+Importantes. Fueron corregidos en un único fix pass, cada uno con test
+RED→GREEN propio (ver `ingestion/tests/` y `features/tests/`); los 9
+Minor quedan diferidos sin corregir (ver `docs/limitations.md` y la
+lista de abajo).
+
+**Críticos corregidos:**
+- **Máscara de nubes invertida** — `ingestion/sentinel2/client.py`
+  construía `cloud_mask` como "true = está claro" (`!=`/`&`) y openEO
+  `mask(mask_cube)` reemplaza por nodata donde el mask es `true` — el
+  composite resultante conservaba nube y descartaba lo claro. Corregido
+  a `==`/`|` ("true = es nube").
+- **NDVI no leía el nodata declarado por la fuente** — un sentinel de
+  nodata entero (p. ej. `-32768`) se leía como reflectancia real,
+  fabricando un NDVI plausible que además contaminaba celdas vecinas al
+  reproyectar con bilineal. Corregido: `compute_ndvi_masked` construye
+  una máscara de validez desde `src.nodata` (y NaN) antes de calcular
+  el cociente.
+- **Mediana temporal sobre SCL (categórico)** — fabricaba clases de
+  nube inexistentes, que luego alimentaban un enmascarado local ya
+  corrompido. Corregido eliminando SCL del composite final (ver sección
+  "SUPERSEDIDO" más arriba) — el composite descargado ahora tiene 2
+  bandas (B04, B08), no 3.
+
+**Importantes corregidos:**
+- `temporal_extent` de openEO es exclusivo en su límite superior —
+  usar el último día del mes perdía ese día completo. Corregido: límite
+  = primer día del mes siguiente.
+- Descarga de Sentinel-2 no era atómica — una descarga interrumpida
+  dejaba un archivo parcial que el chequeo de cache trataba como válido
+  para siempre. Corregido: `.part` + `os.replace`, mismo patrón que
+  WorldCover.
+- `version`/`year` de WorldCover no estaban en la clave de cache
+  (colisión silenciosa entre años) y `download_tile` ignoraba los
+  valores del llamador al construir la URL (garantizaba 404).
+  Corregido: ambos parámetros ahora en la clave de cache y threaded
+  hasta `tile_url`.
+- Mosaico de WorldCover materializaba la unión completa de tiles de
+  3°x3° en vez de recortar al bbox pedido. Corregido con
+  `merge(sources, bounds=bbox, ...)`.
+- `fuel_type.tif` se escribía con `nodata=None`, perdiendo la
+  distinción entre "combustible desconocido" y "sin dato" para
+  cualquier lector downstream. Corregido: `nodata=FUEL_TYPE_UNKNOWN`.
+- Offset radiométrico BOA (`BOA_ADD_OFFSET=-1000`, processing baseline
+  04.00+) no se aplicaba ni se documentaba — un error de NDVI de hasta
+  0.25 en una magnitud acotada a [-1,1]. Corregido: constante nombrada
+  aplicada explícitamente en `compute_ndvi_masked`, documentada en
+  `features/vegetation/ndvi.py` y `docs/data-sources.md`.
+- `docs/limitations.md` no tenía ninguna entrada de Sentinel-2/
+  WorldCover. Corregido: backfill de la limitación de escala/memoria y
+  del supuesto urbano/no-combustible.
+- El supuesto "Built-up = no combustible" no estaba documentado en
+  ningún lado con la fuerza de la limitación bosque/plantación.
+  Corregido: bloque `***` en `fuel_type.py` + entrada en
+  `docs/data-sources.md` y `docs/limitations.md`.
+- Los tests del cliente Sentinel-2 no podían detectar una máscara
+  invertida (registraban las llamadas al grafo pero nunca las
+  aseveraban). Corregido: nuevo test que verifica los operadores
+  exactos (`==`/`|`) y el conjunto de clases usado.
+
+**Ruling explícito — escala/memoria a 10 m no resuelta completamente
+(Importante, parcialmente diferido):** el hallazgo de la revisión
+(`I7`) identificó que `compute_and_save_vegetation` y el mosaico de
+WorldCover procesan arrays completos en memoria sin ventaneo, y que
+`composite.download()` es una descarga openEO síncrona sin batch job.
+Se corrigió la parte contenida y de bajo riesgo — WorldCover ahora
+recorta con `merge(..., bounds=bbox)` en vez de mosaiquear tiles
+enteros, y NDVI usa `float32` en vez de `float64` — pero el rediseño
+completo (lectura/escritura por ventanas para NDVI a 10 m sobre el bbox
+real, y conversión de la descarga Sentinel-2 a batch job) es un trabajo
+de alcance comparable a un plan nuevo, no un fix puntual. Se documenta
+honestamente como limitación conocida en `docs/data-sources.md` en vez
+de forzarlo dentro de este fix pass — costo si esta decisión es
+incorrecta: el pipeline de vegetación falla (OOM o rechazo de CDSE) al
+correr contra el bbox de estudio real hasta que se haga ese trabajo.
+
+**Minor deferidos (no corregidos, ver revisión completa para detalle):**
+mapeo de clase 100 (Moss/lichen) a la etiqueta "nieve o hielo" en vez
+de "suelo desnudo"; falta de comentario de contrato de orden de bandas
+en el lado consumidor (parcialmente resuelto como efecto colateral del
+fix de C3, que redujo el contrato a 2 bandas); bbox degenerado/puntual
+produce 0 tiles con mensaje confuso; `int32` para códigos de
+combustible que caben en `uint8`; descarga de tiles sin streaming;
+`max_cloud_cover` no está en la clave de cache de Sentinel-2; fixture
+de integración NDVI original con solapamiento casi nulo (ya
+reemplazada en el fix pass por fixtures más grandes).

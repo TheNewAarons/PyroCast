@@ -64,6 +64,29 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   resolución de dependencias fuera de Docker, pero nadie ha confirmado
   todavía que el contenedor `api` realmente arranca y pasa su healthcheck
   dentro de Docker real.
+- **Vegetación (Sentinel-2/NDVI): escala a 10 m no probada contra el
+  bbox de estudio real**: `features/vegetation/ndvi.py` lee ambas
+  bandas del composite completas en memoria (sin lectura por
+  ventanas/bloques). A 10 m nativos sobre el bbox por defecto
+  (~2.7°x2.8°), el composite es del orden de ~31000x24000 píxeles —
+  decenas de GB en memoria, no probado a esa escala. Además,
+  `Sentinel2Client.fetch_monthly_composite` descarga el composite de
+  forma síncrona (`composite.download()`); CDSE limita el tamaño/tiempo
+  de procesamiento síncrono, y un producto de este tamaño
+  probablemente requiere un batch job (`create_job`/`start_and_wait`)
+  en vez de descarga directa. Encontrado en la revisión final de
+  `ingestion/sentinel2`+`features/vegetation` (2026-09-26); la mitigación
+  contenida (mosaico de WorldCover recortado al bbox, NDVI en float32 en
+  vez de float64) se aplicó, pero el procesamiento por bloques y la
+  conversión a batch job quedan pendientes — ver `docs/decisions.md`.
+- **Fuel-type: áreas urbanas asumidas no combustibles**: la clase
+  Built-up de WorldCover se mapea a `FUEL_URBANO_NO_COMBUSTIBLE`
+  (`ingestion/worldcover/fuel_type.py`) — un supuesto de v1, no una
+  verificación empírica. Esto significa que el modelo, tal como está,
+  no puede representar la propagación de fuego hacia la interfaz
+  urbano-forestal (WUI), que es precisamente el escenario detrás de las
+  muertes y viviendas destruidas que motivan este proyecto (ver
+  CLAUDE.md). Encontrado en la revisión final del 2026-09-26.
 
 ## Herramienta de investigación
 

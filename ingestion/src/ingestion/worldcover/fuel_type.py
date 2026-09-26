@@ -11,6 +11,16 @@ Araucanía (plantaciones de Pinus radiata y Eucalyptus se comportan de
 forma muy distinta a bosque nativo de Nothofagus). Separar ambos
 requeriría una fuente adicional (p. ej. catastro de CONAF), no
 integrada en este proyecto. ***
+
+*** SUPUESTO DE MODELACIÓN EXPLÍCITO: la clase Built-up (50) se mapea a
+FUEL_URBANO_NO_COMBUSTIBLE, es decir, el modelo asume que el fuego NO
+se propaga sobre áreas urbanas/construidas. Esto es una simplificación
+de v1, no una verificación empírica — y significa que el modelo, tal
+como está, no puede representar la propagación hacia la interfaz
+urbano-forestal (WUI), que es precisamente el escenario detrás de las
+muertes y viviendas destruidas que motivan este proyecto (ver
+CLAUDE.md). Se documenta con la misma fuerza que la limitación de
+plantación/bosque nativo de arriba, no como un detalle menor. ***
 """
 import numpy as np
 

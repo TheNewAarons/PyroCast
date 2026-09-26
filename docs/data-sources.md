@@ -153,9 +153,12 @@ RH, recortada a [0,100] porque ERA5-Land puede entregar Td > T).
 ## Sentinel-2 L2A (Copernicus Data Space Ecosystem, vía openEO)
 
 **Qué entrega:** composición mensual de menor nubosidad (mediana
-temporal tras enmascarar nubes por SCL) de las bandas B04 (rojo), B08
-(NIR) y SCL (Scene Classification), usada para calcular NDVI —
-`features/vegetation/ndvi.py`:
+temporal tras enmascarar nubes por SCL) de las bandas B04 (rojo) y B08
+(NIR), usada para calcular NDVI — `features/vegetation/ndvi.py`. La
+banda SCL se usa solo para construir la máscara de nubes server-side y
+se descarta antes de la reducción temporal (es un código categórico;
+una mediana temporal sobre SCL fabricaría clases inexistentes — ver
+`docs/decisions.md`), así que el GeoTIFF descargado tiene 2 bandas, no 3:
 
 ```
 NDVI = (NIR - RED) / (NIR + RED)          # adimensional, [-1, 1]
@@ -181,15 +184,28 @@ por el propio proceso de openEO al combinar bandas).
 **Cómo se organiza / cacheo:** cliente `openeo` (elegido sobre
 `sentinelhub-py` — ver `docs/decisions.md`), autenticado por client
 credentials. Enmascarado de nubes con SCL, clases `{3,8,9,10}` (sombra
-de nube, nube prob. media/alta, cirros delgados), aplicado tanto en el
-proceso openEO (server-side) como localmente en
-`features/vegetation/ndvi.py` (defensa en profundidad, y la única forma
-de testear el enmascarado sin mockear todo el grafo de openEO).
-Cacheado por hash de `(bbox, año, mes)`.
+de nube, nube prob. media/alta, cirros delgados), aplicado ÚNICAMENTE
+server-side en el grafo openEO — no hay una segunda pasada local en
+`features/vegetation/ndvi.py` (la habíamos diseñado como "defensa en
+profundidad" en la primera versión, pero requería conservar SCL
+post-reducción temporal, y eso es exactamente lo que fabrica clases
+inexistentes; ver `docs/decisions.md`). Cacheado por hash de `(bbox,
+año, mes)`. Descarga atómica (`.part` + `os.replace`).
+
+**Corrección radiométrica:** los DN de reflectancia se corrigen con el
+offset aditivo `BOA_ADD_OFFSET = -1000` del processing baseline 04.00+
+(vigente desde 2022-01-25, cubre toda la temporada 2025-26 de este
+proyecto) antes de calcular el cociente NDVI — la colección
+`SENTINEL2_L2A` de CDSE no publica esta metadata, así que es un
+supuesto explícito, no un valor leído del dato (ver
+`features/vegetation/ndvi.py`).
 
 **Reproyección y remuestreo:** NDVI reproyectado a `EPSG:32719` en la
 resolución de trabajo con remuestreo **bilineal** (magnitud continua,
-igual que DEM y ERA5-Land).
+igual que DEM y ERA5-Land). Nodata del composite (declarado por la
+fuente, o NaN) se propaga explícitamente a nodata de NDVI antes de
+reproyectar — nunca se deja que un sentinel de nodata entero se lea
+como reflectancia real.
 
 **Limitaciones conocidas:**
 - El enmascarado de nubes por SCL no es perfecto — nubes delgadas,
@@ -203,6 +219,17 @@ igual que DEM y ERA5-Land).
   Space Ecosystem en este entorno (sin credenciales reales disponibles)
   — el grafo openEO y el mockeo de `openeo.Connection` están verificados
   contra la documentación y tests unitarios, no contra un pedido real.
+- **Escala no probada contra el bbox de estudio real**: a 10 m nativos,
+  el composite sobre el bbox por defecto (~2.7°x2.8°) es del orden de
+  ~31000x24000 píxeles. `compute_and_save_vegetation` lee ambas bandas
+  completas en memoria (no hay lectura por bloques/ventanas) — esto es
+  del orden de decenas de GB para ese tamaño y no ha sido probado a esa
+  escala. Además, `composite.download()` es una descarga openEO
+  síncrona; CDSE limita el tamaño/tiempo de procesamiento síncrono, y un
+  producto de este tamaño probablemente requiere un batch job
+  (`create_job`/`start_and_wait`) en vez de descarga directa. Ninguno de
+  los dos problemas está resuelto todavía — quedan diferidos a un
+  trabajo futuro de procesamiento por bloques + batch jobs.
 
 ## ESA WorldCover
 
@@ -221,8 +248,11 @@ que Copernicus DEM.
 **Cómo se organiza / cacheo:** tiles de 3°x3°, nombrados por esquina
 suroeste, mismo esquema semiabierto que Copernicus DEM. Un tile
 faltante no aborta el mosaico completo (mismo criterio de tolerancia
-que DEM). Resultado final cacheado por hash de `(bbox, resolución,
-CRS, versión)`.
+que DEM). El mosaico se recorta al bbox pedido (`merge(..., bounds=bbox)`)
+en vez de materializar la unión completa de tiles enteros de 3°x3° —
+para el bbox de estudio por defecto, evita leer un array de varios GB
+donde la mayor parte del área no es necesaria. Resultado final cacheado
+por hash de `(bbox, resolución, CRS, versión, año)`.
 
 **Reproyección y remuestreo:** reproyectado a `EPSG:32719` con
 remuestreo **nearest (nunca bilineal)** — los valores son códigos de
@@ -237,13 +267,19 @@ real).
   de Pinus/Eucalyptus vs. bosque nativo de Nothofagus). Separarlos
   requeriría una fuente adicional (p. ej. catastro de CONAF), no
   integrada.
+- **El modelo asume que las áreas urbanas (clase Built-up) no
+  propagan fuego** (`FUEL_URBANO_NO_COMBUSTIBLE`) — una simplificación
+  de v1 que impide representar la interfaz urbano-forestal (WUI), el
+  escenario detrás de las viviendas destruidas que motivan este
+  proyecto. Ver el docstring de `fuel_type.py`.
 - La tabla de mapeo a tipo de combustible es una simplificación
   heurística de una persona, no un sistema de combustibles validado en
   terreno (Fireline/Behave/Scott-Burgan) — ver el docstring de
   `fuel_type.py`.
-- Producto de un único año (2021); no captura cambios de uso de suelo
+- Producto de un único año (2021 por defecto; el año/versión son
+  parámetros de `build_worldcover`); no captura cambios de uso de suelo
   posteriores (p. ej. cosecha de plantaciones, incendios previos que ya
   cambiaron la cobertura).
-- Salida no recortada al bbox exacto ni anclada a una grilla canónica
-  compartida entre fuentes — misma limitación que Copernicus DEM,
-  diferida a `features/grid/`.
+- Salida no anclada a una grilla canónica compartida entre fuentes —
+  misma limitación que Copernicus DEM, diferida a `features/grid/`
+  (el mosaico sí se recorta al bbox pedido, a diferencia de DEM).

@@ -25,10 +25,11 @@ def build_worldcover(
     cache_dir: Path,
     version: str = "v200",
     year: str = "2021",
-    download_fn: Callable[[str, Path], Path] = download_tile,
+    download_fn: Callable[[str, Path, str, str], Path] = download_tile,
 ) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"worldcover_{cache_key_for(bbox, resolution_m, crs, version)}.tif"
+    cache_key = cache_key_for(bbox, resolution_m, crs, version, year)
+    cache_path = cache_dir / f"worldcover_{cache_key}.tif"
     if cache_path.exists():
         return cache_path
 
@@ -39,7 +40,7 @@ def build_worldcover(
         key = tile_key(lat, lon, version=version, year=year)
         dest = raw_tiles_dir / f"{key}.tif"
         try:
-            tile_paths.append(download_fn(key, dest))
+            tile_paths.append(download_fn(key, dest, version, year))
         except WorldCoverDownloadError:
             continue
 
@@ -53,7 +54,12 @@ def build_worldcover(
     try:
         src_nodata = sources[0].nodata
         effective_nodata = src_nodata if src_nodata is not None else _DEFAULT_NODATA
-        mosaic_array, mosaic_transform = merge(sources, nodata=effective_nodata)
+        # bounds=bbox recorta el mosaico al área realmente pedida en vez
+        # de materializar la unión completa de tiles enteros de 3°x3° --
+        # para el bbox de estudio por defecto (2.7°x2.8°) contra 4 tiles
+        # completos (6°x6°), la versión sin recortar habría leído un
+        # array de ~5.2 GB donde ~85% del área no era necesaria.
+        mosaic_array, mosaic_transform = merge(sources, bounds=bbox, nodata=effective_nodata)
         src_crs = sources[0].crs
     finally:
         for src in sources:

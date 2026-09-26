@@ -42,4 +42,14 @@ def test_worldcover_cli_wires_settings_and_produces_fuel_type(tmp_path, monkeypa
     result = runner.invoke(app, ["worldcover"])
     assert result.exit_code == 0, result.output
     assert "Tipo de combustible" in result.output
+
+    from shared.config import get_settings as reread_settings
+
+    settings = reread_settings()
+    fuel_type_path = settings.data_processed_dir / "vegetation" / "fuel_type.tif"
+    with rasterio.open(fuel_type_path) as ds:
+        # nodata explícito (99=FUEL_TYPE_UNKNOWN) -- antes del fix,
+        # nodata=None dejaba que cualquier lector viera un raster
+        # "totalmente válido" incluyendo las celdas sin dato.
+        assert ds.nodata == 99
     get_settings.cache_clear()
