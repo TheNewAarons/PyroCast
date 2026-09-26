@@ -20,7 +20,11 @@ ingest-terrain:
 	uv run --package ingestion pyrocast-ingest dem
 
 ingest-weather:
-	@echo "pendiente: módulo ingestion/era5 aún no implementado"
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "uso: make ingest-weather START=YYYY-MM-DD END=YYYY-MM-DD"; \
+		exit 1; \
+	fi
+	uv run --package ingestion pyrocast-ingest era5 --start $(START) --end $(END)
 
 ingest-vegetation:
 	@echo "pendiente: módulos ingestion/sentinel2 e ingestion/worldcover aún no implementados"

@@ -19,12 +19,17 @@ usada en meteorología operativa:
 Válida entre -40°C y 50°C, con un error máximo documentado de ±0.4% RH
 en ese rango (Alduchov & Eskridge, J. Appl. Meteor., 1996). Es una
 aproximación, no una medición: no reemplaza humedad relativa observada.
+Se recorta a [0, 100] — ERA5-Land puede entregar Td ligeramente mayor a
+T (saturación/niebla), lo que sin recorte daría RH > 100%.
 
 *** LIMITACIÓN DE DISEÑO, NO UN DETALLE MENOR ***
 El remuestreo de ~9 km (grilla nativa de ERA5-Land) a 250 m es
 downscaling por INTERPOLACIÓN (bilineal), no una modelación física de
 procesos de sub-grilla. No introduce información real a esa escala; solo
 suaviza la transición entre celdas de 9 km. Ver docs/limitations.md.
+
+Procesa TODOS los días del NetCDF diario de entrada (no solo el primero)
+— un archivo típico cubre un rango de fechas completo.
 """
 from pathlib import Path
 
@@ -33,6 +38,8 @@ import rasterio
 import xarray as xr
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, calculate_default_transform, reproject
+
+_NODATA = float("nan")
 
 
 def wind_speed_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -46,7 +53,22 @@ def relative_humidity_approx(temp_k: np.ndarray, dewpoint_k: np.ndarray) -> np.n
     dewpoint_c = dewpoint_k - 273.15
     numerator = np.exp((17.625 * dewpoint_c) / (243.04 + dewpoint_c))
     denominator = np.exp((17.625 * temp_c) / (243.04 + temp_c))
-    return 100.0 * numerator / denominator
+    rh = 100.0 * numerator / denominator
+    return np.clip(rh, 0.0, 100.0)
+
+
+def _ensure_descending_latitude(
+    lat: np.ndarray, fields: dict[str, np.ndarray]
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """rasterio/GDAL asumen north-up: fila 0 = latitud más al norte. ERA5
+    normalmente entrega latitud descendente (ya north-up), pero si algún
+    caller pasara una grilla ascendente, construir la transform con
+    lat.max() como origen norte sin voltear los datos georreferenciaría
+    todo al revés — sin error, sin warning. Se normaliza explícitamente."""
+    if lat[0] < lat[-1]:
+        lat = lat[::-1]
+        fields = {name: field[::-1, :] for name, field in fields.items()}
+    return lat, fields
 
 
 def _source_transform(lat: np.ndarray, lon: np.ndarray) -> rasterio.Affine:
@@ -69,14 +91,16 @@ def _reproject_field(
         "EPSG:4326", target_crs, width, height, west, south, east, north,
         resolution=(target_resolution_m, target_resolution_m),
     )
-    dst_array = np.empty((dst_height, dst_width), dtype="float32")
+    dst_array = np.full((dst_height, dst_width), _NODATA, dtype="float32")
     reproject(
         source=data.astype("float32"),
         destination=dst_array,
         src_transform=src_transform,
         src_crs="EPSG:4326",
+        src_nodata=_NODATA,
         dst_transform=dst_transform,
         dst_crs=target_crs,
+        dst_nodata=_NODATA,
         resampling=Resampling.bilinear,
     )
     return dst_array, dst_transform, dst_width, dst_height
@@ -87,7 +111,7 @@ def _write_geotiff(
 ) -> Path:
     with rasterio.open(
         path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1],
-        count=1, dtype="float32", crs=crs, transform=transform,
+        count=1, dtype="float32", crs=crs, transform=transform, nodata=_NODATA,
     ) as dst:
         dst.write(data, 1)
     return path
@@ -95,36 +119,46 @@ def _write_geotiff(
 
 def compute_and_save_weather(
     daily_nc_path: Path, output_dir: Path, target_crs: str, target_resolution_m: int
-) -> dict[str, Path]:
-    with xr.open_dataset(daily_nc_path, engine="h5netcdf") as ds:
-        day = ds.isel(time=0)
-        lat = day["latitude"].values
-        lon = day["longitude"].values
-        u = day["u10"].values
-        v = day["v10"].values
-        temp_k = day["t2m"].values
-        dewpoint_k = day["d2m"].values
-        precip = day["tp"].values
-
-    speed, direction = wind_speed_direction(u, v)
-    rh = relative_humidity_approx(temp_k, dewpoint_k)
-
-    src_transform = _source_transform(lat, lon)
+) -> dict[str, dict[str, Path]]:
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    fields = {
-        "wind_speed": speed,
-        "wind_direction": direction,
-        "relative_humidity": rh,
-        "temperature": temp_k,
-        "precipitation": precip,
+    paths: dict[str, dict[str, Path]] = {
+        "wind_speed": {}, "wind_direction": {}, "relative_humidity": {},
+        "temperature": {}, "precipitation": {},
     }
-    paths: dict[str, Path] = {}
-    for name, field in fields.items():
-        reprojected, transform, _, _ = _reproject_field(
-            field, src_transform, target_crs, target_resolution_m
-        )
-        paths[name] = _write_geotiff(
-            output_dir / f"{name}.tif", reprojected, transform, target_crs
-        )
+
+    with xr.open_dataset(daily_nc_path, engine="h5netcdf") as ds:
+        for time_index in range(ds.sizes["time"]):
+            day = ds.isel(time=time_index)
+            date_iso = str(day["time"].values)[:10]
+            lat = day["latitude"].values
+            lon = day["longitude"].values
+
+            fields = {
+                "u10": day["u10"].values,
+                "v10": day["v10"].values,
+                "t2m": day["t2m"].values,
+                "d2m": day["d2m"].values,
+                "tp": day["tp"].values,
+            }
+            lat, fields = _ensure_descending_latitude(lat, fields)
+
+            speed, direction = wind_speed_direction(fields["u10"], fields["v10"])
+            rh = relative_humidity_approx(fields["t2m"], fields["d2m"])
+
+            src_transform = _source_transform(lat, lon)
+            day_fields = {
+                "wind_speed": speed,
+                "wind_direction": direction,
+                "relative_humidity": rh,
+                "temperature": fields["t2m"],
+                "precipitation": fields["tp"],
+            }
+            for name, field in day_fields.items():
+                reprojected, transform, _, _ = _reproject_field(
+                    field, src_transform, target_crs, target_resolution_m
+                )
+                paths[name][date_iso] = _write_geotiff(
+                    output_dir / f"{name}_{date_iso}.tif", reprojected, transform, target_crs
+                )
+
     return paths

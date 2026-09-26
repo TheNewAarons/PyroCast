@@ -9,6 +9,7 @@ from ingestion.era5.client import (
     Era5RequestFailedError,
     Era5RequestTimeoutError,
     build_request,
+    month_chunks,
 )
 
 BBOX = (-73.7, -39.3, -71.0, -36.5)  # west, south, east, north
@@ -31,12 +32,35 @@ def test_build_request_uses_unarchived_netcdf_format():
     assert request["download_format"] == "unarchived"
 
 
-def test_build_request_spans_year_month_day_across_a_range():
-    request = build_request(BBOX, dt.date(2026, 1, 30), dt.date(2026, 2, 2))
+def test_build_request_spans_days_within_a_single_month():
+    request = build_request(BBOX, dt.date(2026, 1, 15), dt.date(2026, 1, 18))
     assert request["year"] == ["2026"]
-    assert request["month"] == ["01", "02"]
-    assert set(request["day"]) == {"30", "31", "01", "02"}
+    assert request["month"] == ["01"]
+    assert set(request["day"]) == {"15", "16", "17", "18"}
     assert request["time"] == [f"{h:02d}:00" for h in range(24)]
+
+
+def test_build_request_rejects_a_range_crossing_a_month_boundary():
+    with pytest.raises(ValueError, match="mismo mes calendario"):
+        build_request(BBOX, dt.date(2026, 1, 30), dt.date(2026, 2, 2))
+
+
+def test_month_chunks_splits_a_year_boundary_crossing_range_with_no_overfetch():
+    # el caso real de este proyecto: temporada de incendios 2025-2026.
+    # Con listas year/month/day independientes, un solo request para este
+    # rango pediría el producto cartesiano años x meses x días, incluyendo
+    # fechas futuras inexistentes (2026-12-28..31). month_chunks lo evita
+    # partiendo por mes calendario.
+    chunks = month_chunks(dt.date(2025, 12, 28), dt.date(2026, 1, 3))
+    assert chunks == [
+        (dt.date(2025, 12, 28), dt.date(2025, 12, 31)),
+        (dt.date(2026, 1, 1), dt.date(2026, 1, 3)),
+    ]
+
+
+def test_month_chunks_single_month_is_one_chunk():
+    chunks = month_chunks(dt.date(2026, 1, 15), dt.date(2026, 1, 18))
+    assert chunks == [(dt.date(2026, 1, 15), dt.date(2026, 1, 18))]
 
 
 class _FakeResultShapedRemote:

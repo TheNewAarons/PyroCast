@@ -15,11 +15,17 @@ espera indefinida en un pipeline automatizado.
 
 Ambas familias de objeto "remote" que cdsapi puede devolver (según el
 formato del token del usuario) se soportan por duck typing:
-- cdsapi.api.Result (clásico): remote.reply["state"] en
-  {queued,running,completed,failed}
 - ecmwf.datastores Remote (moderno): remote.status en
-  {accepted,running,successful,failed,rejected,dismissed,deleted}
+  {accepted,running,successful,failed,rejected,dismissed,deleted} —
+  verificado contra el código fuente instalado: es una property real,
+  no deprecada. Se chequea PRIMERO.
+- cdsapi.api.Result (clásico): remote.reply["state"] en
+  {queued,running,completed,failed} — se usa solo si el objeto no tiene
+  .status (el moderno Remote SÍ tiene .reply, pero es un alias
+  retrocompatible deprecado que emite DeprecationWarning; chequear
+  .status primero evita dispararlo innecesariamente).
 """
+import calendar
 import datetime as dt
 import time
 from collections.abc import Callable
@@ -28,13 +34,21 @@ from typing import Any
 
 import cdsapi
 
-ERA5_VARIABLES: tuple[str, ...] = (
-    "2m_temperature",
-    "2m_dewpoint_temperature",
-    "10m_u_component_of_wind",
-    "10m_v_component_of_wind",
-    "total_precipitation",
-)
+# request_name (usado por build_request/CDS) -> (nombre corto en el NetCDF
+# resultante, método de agregación diaria). "carryover" es el caso especial
+# de total_precipitation — ver ingestion/era5/aggregate.py: NO es una suma
+# de las 24 muestras horarias (ERA5-Land acumula desde las 00 UTC de cada
+# día; sumar las 24 muestras cuenta ~11-12x de más y mezcla el total del
+# día anterior). Tabla explícita y cerrada: una variable no listada aquí
+# hace que aggregate.py falle en vez de promediarla en silencio.
+VARIABLE_SPEC: dict[str, tuple[str, str]] = {
+    "2m_temperature": ("t2m", "mean"),
+    "2m_dewpoint_temperature": ("d2m", "mean"),
+    "10m_u_component_of_wind": ("u10", "mean"),
+    "10m_v_component_of_wind": ("v10", "mean"),
+    "total_precipitation": ("tp", "carryover"),
+}
+ERA5_VARIABLES: tuple[str, ...] = tuple(VARIABLE_SPEC.keys())
 
 _SUCCESS_STATES = {"completed", "successful"}
 _FAILURE_STATES = {"failed", "rejected", "dismissed", "deleted"}
@@ -48,27 +62,56 @@ class Era5RequestTimeoutError(RuntimeError):
     """La solicitud a CDS no completó dentro del timeout configurado."""
 
 
+def month_chunks(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
+    """Divide [start, end] en tramos que no cruzan un límite de mes.
+
+    CDS acepta year/month/day como listas independientes — un tramo que
+    cruza un límite de mes/año produce el PRODUCTO CARTESIANO de esas
+    listas (p. ej. year=[2025,2026] x month=[01,12] x day=[28..03]
+    incluiría 2026-12-28, una fecha futura inexistente). Dividir por mes
+    calendario elimina el problema en la fuente, en vez de confiar en el
+    recorte posterior de aggregate.py (que protege el resultado agregado,
+    pero no evita la sobre-solicitud ni un posible rechazo de CDS)."""
+    if end < start:
+        raise ValueError(f"end ({end}) es anterior a start ({start})")
+    chunks: list[tuple[dt.date, dt.date]] = []
+    chunk_start = start
+    while chunk_start <= end:
+        last_day_of_month = calendar.monthrange(chunk_start.year, chunk_start.month)[1]
+        month_end = dt.date(chunk_start.year, chunk_start.month, last_day_of_month)
+        chunk_end = min(month_end, end)
+        chunks.append((chunk_start, chunk_end))
+        chunk_start = chunk_end + dt.timedelta(days=1)
+    return chunks
+
+
 def build_request(
     bbox: tuple[float, float, float, float],
     start: dt.date,
     end: dt.date,
     variables: tuple[str, ...] = ERA5_VARIABLES,
 ) -> dict[str, Any]:
+    """Construye una única solicitud CDS. `start`/`end` deben caer dentro
+    del mismo mes calendario — usar month_chunks() para partir un rango
+    más largo antes de llamar a esta función una vez por tramo."""
     if end < start:
         raise ValueError(f"end ({end}) es anterior a start ({start})")
+    if (start.year, start.month) != (end.year, end.month):
+        raise ValueError(
+            f"build_request requiere que start ({start}) y end ({end}) caigan "
+            f"en el mismo mes calendario — usar month_chunks() primero."
+        )
     west, south, east, north = bbox
     dates = []
     current = start
     while current <= end:
         dates.append(current)
         current += dt.timedelta(days=1)
-    years = sorted({d.strftime("%Y") for d in dates})
-    months = sorted({d.strftime("%m") for d in dates})
     days = sorted({d.strftime("%d") for d in dates})
     return {
         "variable": list(variables),
-        "year": years,
-        "month": months,
+        "year": [start.strftime("%Y")],
+        "month": [start.strftime("%m")],
         "day": days,
         "time": [f"{h:02d}:00" for h in range(24)],
         # CDS usa [Norte, Oeste, Sur, Este] — distinto del orden
@@ -80,10 +123,10 @@ def build_request(
 
 
 def _state_of(remote: Any) -> str:
-    reply = getattr(remote, "reply", None)
-    if reply is not None:
-        return str(reply["state"])
-    return str(remote.status)
+    status = getattr(remote, "status", None)
+    if status is not None:
+        return str(status)
+    return str(remote.reply["state"])
 
 
 class Era5Client:

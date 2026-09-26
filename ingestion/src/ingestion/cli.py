@@ -2,6 +2,7 @@
 import typer
 
 from ingestion.dem.cli import dem as dem_command
+from ingestion.era5.cli import era5 as era5_command
 from ingestion.firms.cli import firms as firms_command
 
 app = typer.Typer()
@@ -18,3 +19,4 @@ def _callback() -> None:
 # registrado (comportamiento documentado de Typer).
 app.command("firms")(firms_command)
 app.command("dem")(dem_command)
+app.command("era5")(era5_command)

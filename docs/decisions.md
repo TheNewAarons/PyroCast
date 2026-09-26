@@ -174,11 +174,14 @@ El dataset de estadísticas diarias post-procesadas de CDS excluye
 variables acumuladas (incluida precipitación total) — verificado en su
 propia documentación. Como este proyecto necesita precipitación diaria,
 se pide el dataset horario crudo (`reanalysis-era5-land`) y se agrega a
-diario en `ingestion/era5/aggregate.py` (media para temperatura/punto de
-rocío/viento, suma para precipitación). Costo: una solicitud CDS más
-pesada (24 pasos horarios en vez de un producto ya diario); beneficio:
-control total y correcto sobre la agregación, sin depender de qué
-variables decida excluir el dataset derivado.
+diario en `ingestion/era5/aggregate.py`: media para temperatura/punto de
+rocío/viento, y para precipitación **el valor de la muestra de (día+1)
+a las 00 UTC** (no una suma de las 24 muestras horarias — ver la
+corrección de la revisión final, más abajo). Costo: una solicitud CDS
+más pesada (24 pasos horarios en vez de un producto ya diario), y un
+día adicional de solicitud (para poder leer el acumulado del último día
+pedido); beneficio: control total y correcto sobre la agregación, sin
+depender de qué variables decida excluir el dataset derivado.
 
 ## `wait_until_complete=False` + polling propio, en vez del modo por defecto de cdsapi
 
@@ -206,3 +209,18 @@ netCDF-C + HDF5). Durante la implementación se descubrió que
 `h5netcdf` por sí solo no basta: no declara `h5py` como dependencia dura
 (falla con `ImportError: No module named 'h5py'` al primer uso real),
 así que `h5py` se agregó explícitamente también.
+
+## ERA5-Land: la clave de cache no incluye el bbox
+
+`ingestion/era5/cache.py:cache_key_for` clavea solo por
+`(rango de fechas, variables solicitadas)` — no por bbox. Es una
+decisión de alcance, no un descuido: este proyecto tiene un único bbox
+de estudio fijo por defecto (`shared.config.Settings.study_area_bbox`),
+a diferencia de `ingestion/dem` y `ingestion/worldcover`, donde pedir
+bboxes distintos dentro de la misma corrida es plausible. Costo si se
+llegara a cambiar el bbox de estudio y reutilizar el mismo rango de
+fechas: el daily NetCDF cacheado de la geografía anterior se
+reutilizaría silenciosamente para la nueva — hoy no hay ninguna
+verificación que lo detecte. Si en algún momento se necesita soportar
+múltiples bboxes de ERA5-Land en la misma corrida, agregar el bbox a la
+clave elimina el riesgo por completo.

@@ -138,8 +138,14 @@ valor.
 
 **Qué entrega:** reanálisis de viento, temperatura, humedad y
 precipitación, resolución nativa ~9 km, agregado a diario por este
-proyecto (media para temperatura/punto de rocío/viento, suma para
-precipitación).
+proyecto: media para temperatura/punto de rocío/viento. Para
+precipitación, **el total diario NO es la suma de las 24 muestras
+horarias** — ERA5-Land acumula `tp` de forma corrida desde las 00 UTC
+de cada día (verificado contra la documentación de ECMWF), así que el
+total real del día d es la muestra de (d+1) a las 00 UTC. Sumar las 24
+muestras horarias del día sobreconté por ~11-12x y mezcla el acumulado
+del día anterior — un error real encontrado y corregido en la revisión
+final de este módulo.
 
 **Cómo obtener la API key (gratuita):**
 1. Crear cuenta en https://cds.climate.copernicus.eu/
