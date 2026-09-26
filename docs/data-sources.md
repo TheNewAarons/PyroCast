@@ -133,3 +133,44 @@ valor.
 - **Resolución nativa ~30 m, remuestreada a 250 m**: se pierde detalle
   de microrelieve; consistente con la simplificación deliberada de
   resolución ya documentada para todo el proyecto (ver limitations.md).
+
+## ERA5-Land (Copernicus CDS)
+
+**Qué entrega:** reanálisis de viento, temperatura, humedad y
+precipitación, resolución nativa ~9 km, agregado a diario por este
+proyecto (media para temperatura/punto de rocío/viento, suma para
+precipitación).
+
+**Cómo obtener la API key (gratuita):**
+1. Crear cuenta en https://cds.climate.copernicus.eu/
+2. Ir a tu perfil y copiar el "Personal Access Token".
+3. Ponerlo en `.env` como `CDS_API_KEY=...` y `CDS_API_URL=https://cds.climate.copernicus.eu/api`
+   (ver `.env.example`). Este proyecto pasa `url`/`key` directo al
+   constructor de `cdsapi.Client` — nunca escribe `~/.cdsapirc`.
+
+**Naturaleza asíncrona de las solicitudes (importante):** CDS encola
+cada solicitud; puede tardar **minutos u horas** según la carga del
+servicio, no segundos. `ingestion/era5/client.py` implementa su propio
+polling con timeout configurable (`timeout_seconds`, por defecto 1
+hora) — la propia librería `cdsapi`, en su modo por defecto, no tiene
+ningún límite de espera total (se verificó leyendo su código fuente).
+
+**Por qué `reanalysis-era5-land` (horario) y no
+`derived-era5-land-daily-statistics`:** el dataset de estadísticas
+diarias de CDS **omite variables acumuladas, incluyendo precipitación
+total** — inútil para este proyecto, que la requiere. Se pide el
+dataset horario crudo y se agrega a diario en `ingestion/era5/aggregate.py`.
+
+**Downscaling — limitación central, no un detalle:** ERA5-Land tiene
+~9 km de resolución nativa. Se reproyecta y remuestrea a la grilla de
+250 m del proyecto mediante interpolación **bilineal**
+(`features/weather/derive.py`). **Esto es downscaling por
+interpolación, no una modelación física de procesos de sub-grilla** —
+no introduce detalle real a esa escala, solo suaviza la transición
+entre celdas de 9 km. Ver `docs/limitations.md`.
+
+**Humedad relativa:** aproximada desde temperatura y punto de rocío con
+la fórmula de Magnus-Tetens (coeficientes de Alduchov & Eskridge, 1996):
+`RH = 100 * exp(17.625*Td/(243.04+Td)) / exp(17.625*T/(243.04+T))` (T,
+Td en °C). Válida entre -40°C y 50°C, error máximo documentado ±0.4% RH
+en ese rango — es una aproximación, no una medición real de humedad.

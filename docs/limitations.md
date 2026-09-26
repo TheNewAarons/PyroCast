@@ -7,12 +7,21 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
 ## Limitaciones de diseño (conocidas desde el bootstrap, no hallazgos de evaluación)
 
 - **Resolución de ERA5-Land vs. grilla de trabajo**: ERA5-Land tiene
-  resolución nativa de ~9 km. Se interpola a la grilla de 250 m del
-  proyecto, lo que introduce un artefacto de downscaling — los campos de
-  viento/temperatura/humedad/precipitación tendrán variabilidad
-  espacial artificialmente suave dentro de cada celda de 9 km original.
-  Esto debe mencionarse explícitamente en cualquier resultado que use
-  clima como insumo.
+  resolución nativa de ~9 km. `features/weather/derive.py` la
+  reproyecta y remuestrea a la grilla de 250 m del proyecto mediante
+  interpolación bilineal — un downscaling puramente geométrico, **no**
+  una modelación física de procesos atmosféricos de sub-grilla. Los
+  campos de viento/temperatura/humedad/precipitación tendrán
+  variabilidad espacial artificialmente suave dentro de cada celda de
+  9 km original; la variabilidad real por debajo de esa escala
+  simplemente no está en los datos de origen. Debe mencionarse
+  explícitamente en cualquier resultado que use clima como insumo.
+- **Humedad relativa de ERA5-Land es aproximada, no medida**: se deriva
+  de temperatura y punto de rocío con la fórmula de Magnus-Tetens
+  (coeficientes de Alduchov & Eskridge, 1996), válida entre -40°C y
+  50°C con un error máximo documentado de ±0.4% RH en ese rango — es una
+  aproximación estándar en meteorología, pero no reemplaza una medición
+  real de humedad relativa.
 - **Resolución espacio-temporal reducida frente a la literatura**: el
   paper de referencia (WildfireCube) trabaja a 30 m / 3 h. PyroCast usa
   250 m / diario por ser un proyecto de una sola persona; esto es una

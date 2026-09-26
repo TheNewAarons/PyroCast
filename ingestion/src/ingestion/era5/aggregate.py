@@ -30,10 +30,15 @@ def aggregate_hourly_to_daily(
         daily_mean = clipped[mean_vars].resample(time="1D").mean() if mean_vars else None
         daily_sum = clipped[sum_vars].resample(time="1D").sum() if sum_vars else None
 
+        daily: xr.Dataset
         if daily_mean is not None and daily_sum is not None:
             daily = xr.merge([daily_mean, daily_sum])
+        elif daily_mean is not None:
+            daily = daily_mean
+        elif daily_sum is not None:
+            daily = daily_sum
         else:
-            daily = daily_mean if daily_mean is not None else daily_sum
+            raise ValueError("El NetCDF horario no tiene ninguna variable reconocida")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         daily.to_netcdf(output_path, engine="h5netcdf")

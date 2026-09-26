@@ -167,3 +167,42 @@ corregidos en el mismo commit:
   geográfico o con transform rotada — antes calculaba pendientes
   fabricadas (una pendiente real de 45° se calculaba como ~90°) sin
   ningún error.
+
+## ERA5-Land: `reanalysis-era5-land` horario + agregación propia, en vez de `derived-era5-land-daily-statistics`
+
+El dataset de estadísticas diarias post-procesadas de CDS excluye
+variables acumuladas (incluida precipitación total) — verificado en su
+propia documentación. Como este proyecto necesita precipitación diaria,
+se pide el dataset horario crudo (`reanalysis-era5-land`) y se agrega a
+diario en `ingestion/era5/aggregate.py` (media para temperatura/punto de
+rocío/viento, suma para precipitación). Costo: una solicitud CDS más
+pesada (24 pasos horarios en vez de un producto ya diario); beneficio:
+control total y correcto sobre la agregación, sin depender de qué
+variables decida excluir el dataset derivado.
+
+## `wait_until_complete=False` + polling propio, en vez del modo por defecto de cdsapi
+
+Se leyó el código fuente de `cdsapi` (2026-09-26): con
+`wait_until_complete=True` (el default), el polling interno no tiene
+límite de tiempo total — solo timeouts por petición HTTP individual, en
+un `while True` sin salida por tiempo. Para cumplir el requisito de
+"timeout configurable", este proyecto usa `wait_until_complete=False` y
+un bucle propio en `ingestion/era5/client.py` con `timeout_seconds`
+explícito. El bucle soporta por duck typing ambas formas de objeto
+"remote" que `cdsapi` puede devolver según el formato del token del
+usuario (clásico `reply["state"]` vs. moderno `.status`), verificado
+leyendo el código fuente de ambas rutas (`ecmwf/cdsapi` y
+`ecmwf/ecmwf-datastores-client`).
+
+## `h5netcdf` + `h5py` (en `ingestion` y `features`)
+
+`xarray` (ya aprobado por CLAUDE.md) necesita un motor capaz de leer
+NetCDF4/HDF5 real — lo que efectivamente entrega CDS. El único backend
+NetCDF ya resuelto transitivamente en el workspace es el de `scipy`,
+que solo soporta NetCDF3 clásico y no puede leer una descarga real de
+ERA5-Land. `h5netcdf` es la alternativa de wheel puro (vía `h5py`), más
+liviana que `netCDF4` (que empaqueta las librerías C completas de
+netCDF-C + HDF5). Durante la implementación se descubrió que
+`h5netcdf` por sí solo no basta: no declara `h5py` como dependencia dura
+(falla con `ImportError: No module named 'h5py'` al primer uso real),
+así que `h5py` se agregó explícitamente también.
