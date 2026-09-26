@@ -283,6 +283,18 @@ nvtx = [
 ]
 
 [[package]]
+name = "deprecated"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f7/9c/16649913bf14c73e0a9453782e148362ff2657067deff6aa9c7ebcddcc31/deprecated-3.0.0.tar.gz", hash = "sha256:16850204d3a1e6bb0acd06bff48d96e8b0a0d25d1c52f71705405a0f4894192d", size = 166912, upload-time = "2026-09-26T13:58:10.675Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/ae/676feae8e4644a6d7169951a97f61c56f416c73f67bf1761f2461d75cc81/deprecated-3.0.0-py3-none-any.whl", hash = "sha256:58204cf4a7f6270d547af5c278ee7a6bb56045a4b3d8441a1cd11660f41b7939", size = 21912, upload-time = "2026-09-26T13:58:09.458Z" },
+]
+
+[[package]]
 name = "detect-installer"
 version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -629,6 +641,7 @@ dependencies = [
     { name = "h5netcdf" },
     { name = "h5py" },
     { name = "numpy" },
+    { name = "openeo" },
     { name = "pyarrow" },
     { name = "rasterio" },
     { name = "requests" },
@@ -650,6 +663,7 @@ requires-dist = [
     { name = "h5netcdf", specifier = ">=1.3" },
     { name = "h5py", specifier = ">=3.11" },
     { name = "numpy", specifier = ">=2.0" },
+    { name = "openeo", specifier = ">=0.31" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "rasterio", specifier = ">=1.3" },
     { name = "requests", specifier = ">=2.32" },
@@ -1057,6 +1071,36 @@ wheels = [
 ]
 
 [[package]]
+name = "openeo"
+version = "0.39.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deprecated" },
+    { name = "numpy" },
+    { name = "oschmod", marker = "sys_platform == 'win32'" },
+    { name = "pandas" },
+    { name = "pystac" },
+    { name = "requests" },
+    { name = "shapely" },
+    { name = "xarray" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/d2/caa6ebf3e18cdad0957a089ef9c529c730d4c78f1d3adefa3f7c37f86567/openeo-0.39.1-py3-none-any.whl", hash = "sha256:e0dce72870924ed5fa74079bd9f054f3ddbbcde8f5a76056eb2f9f698f18075f", size = 303028, upload-time = "2025-02-26T14:14:03.107Z" },
+]
+
+[[package]]
+name = "oschmod"
+version = "0.3.12"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/64/6e522f0a1b500470ae14dcd1a4bb8f8751f5cf441e85e9fee7dfc712cb7b/oschmod-0.3.12.tar.gz", hash = "sha256:bec99216f31615ee653b2a5c87cacfb4e4b6184c0e9f71da186300dacae974f3", size = 20064, upload-time = "2020-10-30T00:38:42.409Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/6a/de92fdb86ed24b320c3d8dc07c9eade21010c5231a46d5cc53024f45168a/oschmod-0.3.12-py2.py3-none-any.whl", hash = "sha256:e71efd5ebcf5cfbb620548644f39eed4fc3cd4a907638a8caaff452fb256637c", size = 14135, upload-time = "2020-10-30T00:38:41.146Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1312,6 +1356,18 @@ dev = [
 ]
 
 [[package]]
+name = "pystac"
+version = "1.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/4f/f6f89956aabffd1211fa9c9130293ac67f774c66fab7944bfe33dc317f18/pystac-1.11.0.tar.gz", hash = "sha256:acb1e04be398a0cda2d8870ab5e90457783a8014a206590233171d8b2ae0d9e7", size = 141392, upload-time = "2024-10-03T19:54:32.101Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/5b/60dc94cbf6af2fd3a3d3fae52de7e294819af2dfe7a1bea4d246beb7e0b6/pystac-1.11.0-py3-none-any.whl", hash = "sha256:10ac7c7b4ea6c5ec8333829a09ec1a33b596f02d1a97ffbbd72cd1b6c10598c1", size = 183925, upload-time = "2024-10-03T19:54:30.751Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1364,6 +1420,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/ed/fa23d28713004418bbf2407127f80f385bfb0bf4e677bef02c25c27b00ee/pytz-2026.4.tar.gz", hash = "sha256:464303645bafafd72418898368b2429458f709cf1eb6a15372fbcc396b64da63", size = 318444, upload-time = "2026-09-24T03:58:40.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/11/e3df59614bebe0ca50c905442603eda64ae7ac19811d4e4f74aa2d51ca85/pytz-2026.4-py2.py3-none-any.whl", hash = "sha256:9d514388fbc89ca0833203464272ac485b8828568ab73532f5020f17e892a0ff", size = 506747, upload-time = "2026-09-24T03:58:38.629Z" },
+]
+
+[[package]]
+name = "pywin32"
+version = "312"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/ff/32aa7d2ed0ab12b323aaa64f9b75e6ad4f8fd09f9ccfc28c79414d46838d/pywin32-312-cp312-cp312-win32.whl", hash = "sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b", size = 6371877, upload-time = "2026-06-04T07:49:28.836Z" },
+    { url = "https://files.pythonhosted.org/packages/03/d9/77040d3b43df3f3be32ea289433d660d2727f5ba327bc73be835127d9d60/pywin32-312-cp312-cp312-win_amd64.whl", hash = "sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc", size = 6914841, upload-time = "2026-06-04T07:49:31.85Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/cc/7b1ec671775756020a0ee7f4feeaf3c568f0ab86bd3900088cf986937a92/pywin32-312-cp312-cp312-win_arm64.whl", hash = "sha256:6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950", size = 6727901, upload-time = "2026-06-04T07:49:34.244Z" },
 ]
 
 [[package]]
