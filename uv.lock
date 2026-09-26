@@ -589,6 +589,7 @@ version = "0.1.0"
 source = { editable = "ingestion" }
 dependencies = [
     { name = "cdsapi" },
+    { name = "features" },
     { name = "numpy" },
     { name = "pyarrow" },
     { name = "rasterio" },
@@ -606,6 +607,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cdsapi", specifier = ">=0.7" },
+    { name = "features", editable = "features" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "rasterio", specifier = ">=1.3" },

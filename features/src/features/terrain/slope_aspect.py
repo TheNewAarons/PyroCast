@@ -21,9 +21,11 @@ ladera), medido en sentido horario desde el norte (0=N, 90=E, 180=S,
 270=O) — la convención estándar en GIS para orientación de terreno.
 
 Limitación conocida: el padding de borde usa modo 'edge' (replica el
-píxel más cercano) y no hay manejo especial de nodata — un DEM con
-huecos de datos producirá pendiente/orientación no confiables cerca de
-esos huecos. Ver docs/data-sources.md.
+píxel más cercano). Las celdas cuya elevación de origen ES nodata se
+marcan como nodata en la salida (no se fabrica un valor), pero las
+celdas VECINAS a un hueco de datos siguen usando ese hueco en su
+kernel 3x3 — su pendiente/orientación no es confiable cerca del borde
+del hueco. Ver docs/data-sources.md.
 """
 from pathlib import Path
 
@@ -58,20 +60,42 @@ def compute_slope_aspect(
     return slope_deg, aspect_deg
 
 
+_OUTPUT_NODATA = -9999.0
+
+
 def compute_and_save_terrain(dem_path: Path, output_dir: Path) -> tuple[Path, Path]:
     with rasterio.open(dem_path) as src:
+        if src.crs is None or src.crs.is_geographic:
+            raise ValueError(
+                f"compute_and_save_terrain requiere un DEM ya reproyectado a un "
+                f"CRS proyectado (metros) — recibido: {src.crs}. Calcular "
+                f"pendiente/orientación sobre un CRS geográfico (grados) usa el "
+                f"tamaño de celda en grados como si fuera metros, fabricando "
+                f"pendientes incorrectas."
+            )
+        if src.transform.b != 0 or src.transform.d != 0:
+            raise ValueError(
+                "compute_and_save_terrain requiere una transform sin rotación "
+                "(transform.b == transform.d == 0)."
+            )
         elevation = src.read(1).astype("float64")
         cellsize_x = src.transform.a
         cellsize_y = -src.transform.e  # e es negativo en rasters north-up
         profile = src.profile
+        src_nodata = src.nodata
 
     slope_deg, aspect_deg = compute_slope_aspect(elevation, cellsize_x, cellsize_y)
+
+    if src_nodata is not None:
+        nodata_mask = elevation == src_nodata
+        slope_deg = np.where(nodata_mask, _OUTPUT_NODATA, slope_deg)
+        aspect_deg = np.where(nodata_mask, _OUTPUT_NODATA, aspect_deg)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     slope_path = output_dir / "slope_deg.tif"
     aspect_path = output_dir / "aspect_deg.tif"
 
-    out_profile = {**profile, "dtype": "float32", "count": 1, "nodata": None}
+    out_profile = {**profile, "dtype": "float32", "count": 1, "nodata": _OUTPUT_NODATA}
     with rasterio.open(slope_path, "w", **out_profile) as dst:
         dst.write(slope_deg.astype("float32"), 1)
     with rasterio.open(aspect_path, "w", **out_profile) as dst:

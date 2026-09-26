@@ -20,21 +20,27 @@ def test_tile_url_builds_full_tif_path():
 
 
 def test_tiles_for_bbox_covers_study_area_example():
-    # west, south, east, north — Biobío/Ñuble/Araucanía-shaped bbox
+    # west, south, east, north — Biobío/Ñuble/Araucanía-shaped bbox. east
+    # lands exactly on -71.0: the tile starting at -71 covers [-71,-70)
+    # and has zero overlap with this bbox, so the NE-most tile is -72,
+    # not -71 (see test below for the half-open-interval reasoning).
     bbox = (-73.7, -39.3, -71.0, -36.5)
     tiles = tiles_for_bbox(bbox)
     assert (-40, -74) in tiles  # SW-most tile
-    assert (-37, -71) in tiles  # NE-most tile
-    assert len(tiles) == (40 - 37 + 1) * (74 - 71 + 1)  # 4 lat bands x 4 lon bands = 16
+    assert (-37, -72) in tiles  # NE-most tile
+    assert (-37, -71) not in tiles  # zero-overlap tile, must be excluded
+    assert len(tiles) == (40 - 37 + 1) * (74 - 72 + 1)  # 4 lat bands x 3 lon bands = 12
 
 
-def test_tiles_for_bbox_includes_tile_when_edge_lands_on_integer_degree():
-    # north edge exactly on -36.0: must still include the S36 tile whose
-    # southern edge IS that boundary, and must NOT silently stop at S37.
+def test_tiles_for_bbox_excludes_tile_when_edge_lands_exactly_on_its_start():
+    # Cada tile cubre [lat, lat+1) x [lon, lon+1) -- semiabierto. Un borde
+    # north/east que cae EXACTAMENTE en un entero N no se solapa con el
+    # tile que arranca en N (ese tile es [N, N+1)) -- incluirlo pediría
+    # un tile de cobertura cero, y en la práctica falla con 404 cuando
+    # ese tile cae en el océano (bboxes de números redondos son comunes).
     bbox = (-72.0, -37.0, -71.0, -36.0)
     tiles = tiles_for_bbox(bbox)
-    assert (-37, -72) in tiles
-    assert (-36, -72) in tiles
+    assert tiles == [(-37, -72)]
 
 
 def test_tiles_for_bbox_single_tile():

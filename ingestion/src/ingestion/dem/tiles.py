@@ -27,12 +27,20 @@ def tile_url(key: str) -> str:
 
 def tiles_for_bbox(bbox: tuple[float, float, float, float]) -> list[tuple[int, int]]:
     """bbox = (west, south, east, north). Devuelve pares (lat, lon) de la
-    esquina SO de cada tile 1x1 que intersecta el bbox."""
+    esquina SO de cada tile 1x1 que intersecta el bbox.
+
+    Cada tile cubre [lat, lat+1) x [lon, lon+1) — semiabierto. Por eso el
+    límite superior usa ceil(x)-1, no floor(x): si north (o east) cae
+    justo en un entero N, el tile que empieza en N cubre [N, N+1) y no
+    se solapa con el bbox en absoluto (solapamiento de ancho cero en su
+    borde sur/oeste) — incluirlo pediría un tile de más sin ninguna
+    cobertura real, y en la práctica falla con 404 cuando ese tile cae
+    en el océano (frecuente con bboxes de números redondos)."""
     west, south, east, north = bbox
     lat_start = math.floor(south)
-    lat_end = math.floor(north)
+    lat_end = math.ceil(north) - 1
     lon_start = math.floor(west)
-    lon_end = math.floor(east)
+    lon_end = math.ceil(east) - 1
     return [
         (lat, lon)
         for lat in range(lat_start, lat_end + 1)

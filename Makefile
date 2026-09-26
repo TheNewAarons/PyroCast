@@ -17,7 +17,7 @@ ingest-firms:
 		$(if $(BBOX),--bbox $(BBOX)) $(if $(SENSOR),--sensor $(SENSOR))
 
 ingest-terrain:
-	@echo "pendiente: módulo ingestion/dem aún no implementado"
+	uv run --package ingestion pyrocast-ingest dem
 
 ingest-weather:
 	@echo "pendiente: módulo ingestion/era5 aún no implementado"

@@ -1,6 +1,7 @@
 """Tests de pendiente/orientación (método de Horn) contra un DEM sintético
 con pendiente conocida analíticamente."""
 import numpy as np
+import pytest
 import rasterio
 from features.terrain.slope_aspect import compute_and_save_terrain, compute_slope_aspect
 from rasterio.transform import from_origin
@@ -60,3 +61,41 @@ def test_compute_and_save_terrain_writes_two_geotiffs_preserving_crs(tmp_path):
         assert ds.transform == transform
     with rasterio.open(aspect_path) as ds:
         assert ds.crs.to_string() == "EPSG:32719"
+
+
+def test_compute_and_save_terrain_rejects_geographic_crs(tmp_path):
+    # Un DEM sin reproyectar (grados, no metros) haría que cellsize_x/y se
+    # interpreten como metros por error, produciendo pendientes fabricadas
+    # (p. ej. una pendiente real de 45 grados calculada como ~90 grados).
+    dem_path = tmp_path / "dem_wgs84.tif"
+    size = 6
+    transform = from_origin(-72.0, -37.0, 0.1, 0.1)
+    elevation = np.tile(np.arange(size, dtype="float32") * 10.0, (size, 1))
+    with rasterio.open(
+        dem_path, "w", driver="GTiff", height=size, width=size, count=1,
+        dtype="float32", crs="EPSG:4326", transform=transform,
+    ) as dst:
+        dst.write(elevation, 1)
+
+    with pytest.raises(ValueError, match="geográfic"):
+        compute_and_save_terrain(dem_path, tmp_path / "terrain")
+
+
+def test_compute_and_save_terrain_masks_nodata_cells_in_output(tmp_path):
+    dem_path = tmp_path / "dem_with_holes.tif"
+    size = 6
+    transform = from_origin(500000, 5800000, 250, 250)
+    elevation = np.tile(np.arange(size, dtype="float32") * 10.0, (size, 1))
+    elevation[0, 0] = -32767.0  # hueco de datos
+    with rasterio.open(
+        dem_path, "w", driver="GTiff", height=size, width=size, count=1,
+        dtype="float32", crs="EPSG:32719", transform=transform, nodata=-32767.0,
+    ) as dst:
+        dst.write(elevation, 1)
+
+    slope_path, aspect_path = compute_and_save_terrain(dem_path, tmp_path / "terrain")
+
+    with rasterio.open(slope_path) as ds:
+        assert ds.nodata is not None
+        arr = ds.read(1)
+        assert arr[0, 0] == ds.nodata  # celda de origen sin dato -> nodata, no un valor fabricado

@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "shared",
+    "features",
     "requests>=2.32",
     "cdsapi>=0.7",
     "typer>=0.12",
@@ -17,6 +18,7 @@ pyrocast-ingest = "ingestion.cli:app"
 
 [tool.uv.sources]
 shared = { workspace = true }
+features = { workspace = true }
 
 [dependency-groups]
 dev = ["responses>=0.25", "vcrpy>=6.0"]

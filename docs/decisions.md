@@ -120,3 +120,50 @@ tiles necesarios.
 `features`; se agregaron también a `ingestion` (mosaico/reproyección de
 tiles ocurre ahí) — declaración de dependencia normal, no una
 dependencia externa nueva.
+
+## `ingestion` depende de `features` (invierte la dirección habitual del pipeline)
+
+`Makefile`'s `ingest-terrain` target está documentado en CLAUDE.md como
+"DEM + derivados" — un solo comando que entrega tanto el DEM reproyectado
+como pendiente/orientación. Como CLAUDE.md pide `data/processed/terrain/`
+como destino final (no un DEM crudo), `ingestion/dem/cli.py` importa
+`features.terrain.slope_aspect.compute_and_save_terrain` directamente, y
+`ingestion/pyproject.toml` ahora depende de `features`. Esto invierte la
+dirección `ingestion -> features` del diagrama de arquitectura de
+CLAUDE.md. Es una dependencia acotada a un solo archivo de CLI
+(`ingestion/dem/cli.py`); `ingestion/dem/pipeline.py` (la lógica real de
+descarga/mosaico/reproyección) sigue sin depender de `features` en
+absoluto. Alternativa considerada y descartada: un script separado fuera
+del workspace de `ingestion`/`features` — más consistente con la capa,
+pero rompe la promesa de "un solo comando" que el Makefile ya
+publicitaba desde el bootstrap.
+
+## DEM: manejo de nodata forzado, tile-grid semiabierta, descargas atómicas, tiles tolerantes a 404
+
+Hallazgos de la revisión final de `ingestion/dem/` (2026-09-26), todos
+corregidos en el mismo commit:
+- Los tiles reales de Copernicus DEM declaran `nodata=None` (verificado
+  contra el bucket real). Sin un valor propio, cualquier hueco del
+  mosaico se rellenaba con `0.0` sin marcar, y `features/terrain` lo
+  interpretaba como terreno real a nivel del mar, fabricando pendientes
+  de hasta ~66° sobre relieve en realidad plano. Se fuerza un nodata
+  propio (`-32767.0` DEM, `-9999.0` pendiente/orientación) en todo el
+  pipeline.
+- `tiles_for_bbox` usaba `floor()` también para el límite superior
+  (norte/este), pero cada tile cubre `[lat, lat+1)` — semiabierto. Un
+  borde del bbox exactamente sobre un entero incluía de más un tile de
+  cobertura cero, que en la práctica falla con 404 si cae en el océano
+  (bboxes de números redondos son comunes). Corregido a `ceil(x) - 1`
+  para los límites superiores.
+- Un tile individual faltante (hueco de cobertura de GLO-30 Public, o
+  tile oceánico) ya no aborta todo el build — se tolera, queda como
+  hueco marcado con nodata, y solo se falla si ningún tile del bbox pudo
+  descargarse.
+- La descarga de un tile ahora escribe a un archivo `.part` temporal y
+  usa `os.replace()` al completar — una descarga interrumpida (los tiles
+  pesan ~40 MB) ya no deja un `.tif` truncado que se trataría como
+  cache-hit válido para siempre.
+- `compute_and_save_terrain` ahora rechaza explícitamente un DEM en CRS
+  geográfico o con transform rotada — antes calculaba pendientes
+  fabricadas (una pendiente real de 45° se calculaba como ~90°) sin
+  ningún error.

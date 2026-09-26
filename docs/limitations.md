@@ -30,6 +30,25 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   Linux con un host cuyo uid de usuario no sea 1000 puede producir
   errores de permiso al escribir en `/data`. Si eso ocurre, ajustar los
   permisos de `./data` en el host (o cambiar a un volumen nombrado).
+- **DEM: salida no recortada al bbox exacto ni anclada a una grilla
+  canónica**: `ingestion/dem/pipeline.py` produce un raster que cubre el
+  mosaico completo de tiles enteros de 1°x1° (puede exceder el bbox
+  pedido), con el origen de la grilla de 250 m determinado por los
+  bounds reproyectados, no por un ancla fija — dos bboxes distintos que
+  comparten los mismos tiles hoy producen orígenes de píxel distintos.
+  Esto se descubrió en la revisión final de `ingestion/dem/` (un
+  revisor independiente cuantificó, para un bbox de prueba grande, que
+  ~6% de la salida caía fuera de la cobertura real de datos). Se corrigió
+  el síntoma más grave — esas celdas ahora se marcan con nodata en vez
+  de fabricarse como `0.0` (terreno a nivel del mar) — pero el recorte
+  exacto al bbox y el anclaje a una grilla canónica de 250 m compartida
+  entre todas las fuentes (DEM, ERA5-Land, vegetación) queda diferido a
+  `features/grid/`, todavía sin implementar.
+- **DEM: bordes de huecos de datos no confiables**: una celda cuya
+  elevación de origen es nodata se marca como nodata en la pendiente y
+  orientación de salida, pero las celdas vecinas a ese hueco siguen
+  usando el hueco dentro de su kernel 3x3 de cálculo — su valor no es
+  confiable cerca del borde de cualquier hueco de datos.
 - **`docker compose up` no verificado end-to-end**: el bootstrap inicial
   se hizo en un entorno sin Docker instalado (ver `docs/decisions.md`).
   El Dockerfile y compose se revisaron estáticamente y se simuló la

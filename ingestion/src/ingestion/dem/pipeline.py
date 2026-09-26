@@ -9,8 +9,16 @@ from rasterio.merge import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from ingestion.dem.cache import cache_key_for
-from ingestion.dem.client import download_tile
+from ingestion.dem.client import DemDownloadError, download_tile
 from ingestion.dem.tiles import tile_key, tiles_for_bbox
+
+# Los tiles reales de Copernicus DEM GLO-30 declaran nodata=None (verificado
+# contra el bucket real) — no hay forma de distinguir "sin dato" de "0 m" en
+# el archivo de origen. Sin un valor de nodata explícito, cualquier celda
+# fuera del mosaico (o un hueco entre tiles) se rellena con 0.0 sin marcar,
+# y features/terrain la interpretaría como terreno real a nivel del mar,
+# fabricando pendientes falsas en el borde. Se fuerza un nodata propio.
+_DEFAULT_DEM_NODATA = -32767.0
 
 
 def build_dem(
@@ -28,16 +36,36 @@ def build_dem(
 
     raw_tiles_dir.mkdir(parents=True, exist_ok=True)
     tile_paths = []
-    for lat, lon in tiles_for_bbox(bbox):
+    requested_tiles = tiles_for_bbox(bbox)
+    for lat, lon in requested_tiles:
         key = tile_key(lat, lon)
         dest = raw_tiles_dir / f"{key}.tif"
-        tile_paths.append(download_fn(key, dest))
+        try:
+            tile_paths.append(download_fn(key, dest))
+        except DemDownloadError:
+            # GLO-30 Public tiene huecos de cobertura (variante Public vs.
+            # -R no liberada) y tiles oceánicos genuinamente no existen —
+            # se tolera un tile faltante (queda como hueco en el mosaico,
+            # cubierto por el nodata de abajo) y solo se falla si NINGÚN
+            # tile de los pedidos pudo descargarse.
+            continue
+
+    if not tile_paths:
+        raise DemDownloadError(
+            f"Ninguno de los {len(requested_tiles)} tile(s) requeridos para "
+            f"este bbox pudo descargarse."
+        )
 
     sources = [rasterio.open(p) for p in tile_paths]
     try:
-        mosaic_array, mosaic_transform = merge(sources)
-        src_crs = sources[0].crs
         src_nodata = sources[0].nodata
+        # Los tiles reales de Copernicus DEM declaran nodata=None — sin un
+        # valor propio, cualquier hueco del mosaico (tile faltante, borde)
+        # se rellena con 0.0 sin marcar, y features/terrain lo tomaría
+        # como terreno real a nivel del mar.
+        effective_nodata = src_nodata if src_nodata is not None else _DEFAULT_DEM_NODATA
+        mosaic_array, mosaic_transform = merge(sources, nodata=effective_nodata)
+        src_crs = sources[0].crs
     finally:
         for src in sources:
             src.close()
@@ -53,23 +81,25 @@ def build_dem(
         resolution=(resolution_m, resolution_m),
     )
 
-    dst_array = np.empty((mosaic_array.shape[0], dst_height, dst_width), dtype=mosaic_array.dtype)
+    dst_array = np.full(
+        (mosaic_array.shape[0], dst_height, dst_width), effective_nodata, dtype=mosaic_array.dtype
+    )
     reproject(
         source=mosaic_array,
         destination=dst_array,
         src_transform=mosaic_transform,
         src_crs=src_crs,
-        src_nodata=src_nodata,
+        src_nodata=effective_nodata,
         dst_transform=dst_transform,
         dst_crs=crs,
-        dst_nodata=src_nodata,
+        dst_nodata=effective_nodata,
         resampling=Resampling.bilinear,
     )
 
     with rasterio.open(
         cache_path, "w", driver="GTiff",
         height=dst_height, width=dst_width, count=dst_array.shape[0],
-        dtype=dst_array.dtype, crs=crs, transform=dst_transform, nodata=src_nodata,
+        dtype=dst_array.dtype, crs=crs, transform=dst_transform, nodata=effective_nodata,
     ) as dst:
         dst.write(dst_array)
 

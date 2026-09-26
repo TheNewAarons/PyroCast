@@ -80,24 +80,56 @@ reprocesar nada. Los tiles crudos individuales también se cachean por
 su nombre (son globales/estáticos, reutilizables entre bboxes distintos
 que compartan un tile).
 
-**Pendiente y orientación:** ver `features/terrain/slope_aspect.py` —
-método de Horn (1981), el mismo que usan GDAL `gdaldem` y ESRI. Pendiente
-en grados (0-90), orientación en grados de rumbo (0-360, sentido
-horario desde el norte, -1 para celdas planas). Se calculan sobre el
-DEM ya reproyectado a EPSG:32719 (metros), nunca sobre el DEM crudo en
-grados — de lo contrario el tamaño de celda en metros variaría con la
-latitud y la pendiente quedaría mal calculada.
+**Pendiente y orientación (fórmula y unidades):** ver
+`features/terrain/slope_aspect.py` — método de Horn (1981), el mismo
+que usan GDAL `gdaldem` y ESRI. Con la ventana 3x3 `a b c / d e f / g h
+i` centrada en el píxel (fila = eje Y hacia el sur, columna = eje X
+hacia el este):
+
+```
+dz/dx = ((c + 2f + i) - (a + 2d + g)) / (8 * cellsize_x)
+dz/dy = ((g + 2h + i) - (a + 2b + c)) / (8 * cellsize_y)
+
+slope_deg  = grados(atan(hipot(dz/dx, dz/dy)))          # [0, 90]
+aspect_deg = (grados(atan2(-dz/dx, dz/dy))) mod 360      # [0, 360), -1 si es plana
+```
+
+Pendiente en **grados** (0-90). Orientación en **grados de rumbo**
+(0-360, sentido horario desde el norte: 0=N, 90=E, 180=S, 270=O), con
+**-1** para celdas planas. Se calculan sobre el DEM ya reproyectado a
+EPSG:32719 (metros) — `compute_and_save_terrain` rechaza explícitamente
+un DEM en CRS geográfico (grados), porque el tamaño de celda en metros
+variaría con la latitud y la pendiente quedaría mal calculada.
+
+**Manejo de nodata:** los tiles reales de Copernicus DEM declaran
+`nodata=None` — sin un valor propio, cualquier hueco del mosaico (tile
+faltante, borde del área pedida) se rellenaría con `0.0` sin marcar, y
+`features/terrain` lo leería como terreno real a nivel del mar. El
+pipeline fuerza un nodata propio (`-32767.0` para el DEM, `-9999.0`
+para pendiente/orientación) y lo propaga; las celdas cuya elevación de
+origen es nodata se marcan como nodata en la salida, no se fabrica un
+valor.
 
 **Limitaciones conocidas:**
 - **GLO-30 Public tiene huecos**: una fracción de tiles globales no
   está liberada públicamente por el programa Copernicus (variante
-  `COP-DEM-GLO-30-R` vs. `Public`); si el área de estudio cayera en uno
-  de esos huecos, la descarga fallaría con 404 — no verificado
-  exhaustivamente para Biobío/Ñuble/Araucanía en este bootstrap.
-- **Sin manejo de nodata en el cálculo de pendiente/orientación**: el
-  kernel de Horn usa relleno de borde ("edge padding") pero no
-  enmascara nodata — celdas cerca de huecos de datos producirán
-  valores de pendiente/orientación no confiables.
+  `COP-DEM-GLO-30-R` vs. `Public`), y los tiles oceánicos genuinamente
+  no existen (verificado: varios tiles costeros/oceánicos cercanos al
+  área de estudio devuelven 404). El pipeline tolera tiles individuales
+  faltantes (quedan como hueco marcado con nodata) y solo falla si
+  **ningún** tile del bbox pudo descargarse.
+- **Bordes de huecos de datos no son confiables**: una celda cuya
+  elevación de origen es nodata se marca como nodata en la salida, pero
+  las celdas VECINAS a ese hueco siguen usando el hueco dentro de su
+  kernel 3x3 — su pendiente/orientación calculada no es confiable.
+- **Salida no recortada al bbox exacto ni anclada a una grilla
+  canónica**: el resultado cubre el mosaico completo de tiles enteros
+  (puede exceder el bbox pedido), y el origen de la grilla de 250 m sale
+  de los bounds reproyectados, no de un ancla fija — dos bboxes distintos
+  dentro del mismo conjunto de tiles hoy producen rasters con orígenes
+  de píxel distintos. Diferido a `features/grid/` (aún no implementado),
+  que debe definir la grilla canónica de 250 m que todas las fuentes
+  compartan.
 - **Resolución nativa ~30 m, remuestreada a 250 m**: se pierde detalle
   de microrelieve; consistente con la simplificación deliberada de
   resolución ya documentada para todo el proyecto (ver limitations.md).
