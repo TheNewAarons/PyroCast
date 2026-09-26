@@ -9,7 +9,12 @@ down:
 	docker compose down
 
 ingest-firms:
-	@echo "pendiente: módulo ingestion/firms aún no implementado"
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "uso: make ingest-firms START=YYYY-MM-DD END=YYYY-MM-DD [BBOX=west,south,east,north] [SENSOR=VIIRS_SNPP_NRT]"; \
+		exit 1; \
+	fi
+	uv run --package ingestion pyrocast-ingest firms --start $(START) --end $(END) \
+		$(if $(BBOX),--bbox $(BBOX)) $(if $(SENSOR),--sensor $(SENSOR))
 
 ingest-terrain:
 	@echo "pendiente: módulo ingestion/dem aún no implementado"

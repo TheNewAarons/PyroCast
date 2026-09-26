@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import responses
 from ingestion.firms.client import FirmsApiError, FirmsClient
+from requests.exceptions import ConnectionError as RequestsConnectionError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OK_CSV = (FIXTURES / "firms_area_ok.csv").read_text()
@@ -112,6 +113,62 @@ def test_fetch_range_chunks_single_day():
     client = FirmsClient(map_key="test-key", sleep_fn=lambda _seconds: None)
     chunks = client._chunk_date_range(dt.date(2026, 1, 1), dt.date(2026, 1, 1))
     assert chunks == [(dt.date(2026, 1, 1), dt.date(2026, 1, 1))]
+
+
+@responses.activate
+def test_fetch_area_csv_retries_on_connection_error_then_succeeds():
+    responses.add(responses.GET, _url(), body=RequestsConnectionError("boom"))
+    responses.add(responses.GET, _url(), body=OK_CSV, status=200)
+    client = FirmsClient(
+        map_key="test-key", max_retries=3, sleep_fn=lambda _s: None, min_request_interval_seconds=0
+    )
+    result = client.fetch_area_csv(
+        BBOX, sensor="VIIRS_SNPP_NRT", day_range=5, date=dt.date(2026, 1, 15)
+    )
+    assert result == OK_CSV
+
+
+@responses.activate
+def test_fetch_area_csv_redacts_map_key_after_exhausting_retries_on_connection_error():
+    for _ in range(4):
+        responses.add(
+            responses.GET, _url(map_key="SUPERSECRET"), body=RequestsConnectionError("boom")
+        )
+    client = FirmsClient(
+        map_key="SUPERSECRET",
+        max_retries=3,
+        sleep_fn=lambda _s: None,
+        min_request_interval_seconds=0,
+    )
+    with pytest.raises(FirmsApiError) as exc_info:
+        client.fetch_area_csv(BBOX, sensor="VIIRS_SNPP_NRT", day_range=5, date=dt.date(2026, 1, 15))
+    assert "SUPERSECRET" not in str(exc_info.value)
+
+
+@responses.activate
+def test_fetch_area_csv_redacts_map_key_from_status_error_body():
+    responses.add(
+        responses.GET, _url(map_key="SUPERSECRET"), body="key SUPERSECRET is invalid", status=403
+    )
+    client = FirmsClient(map_key="SUPERSECRET", sleep_fn=lambda _s: None)
+    with pytest.raises(FirmsApiError) as exc_info:
+        client.fetch_area_csv(BBOX, sensor="VIIRS_SNPP_NRT", day_range=5, date=dt.date(2026, 1, 15))
+    assert "SUPERSECRET" not in str(exc_info.value)
+
+
+@responses.activate
+def test_fetch_range_is_lazy_so_completed_chunks_survive_a_later_failure():
+    responses.add(responses.GET, _url(date="2026-01-01", day_range=5), body=OK_CSV, status=200)
+    for _ in range(4):
+        responses.add(responses.GET, _url(date="2026-01-06", day_range=2), status=500)
+    client = FirmsClient(map_key="test-key", max_retries=3, sleep_fn=lambda _s: None)
+    chunks = client.fetch_range(
+        BBOX, sensor="VIIRS_SNPP_NRT", start=dt.date(2026, 1, 1), end=dt.date(2026, 1, 7)
+    )
+    first = next(chunks)  # chunk 1 succeeds and is yielded before chunk 2 is even requested
+    assert first == (dt.date(2026, 1, 1), dt.date(2026, 1, 5), OK_CSV)
+    with pytest.raises(FirmsApiError):
+        next(chunks)  # chunk 2 fails; chunk 1's result above is unaffected
 
 
 @responses.activate

@@ -20,16 +20,24 @@ def parse_csv_to_detections(raw_csv_text: str) -> list[FireDetection]:
     reader = csv.DictReader(io.StringIO(raw_csv_text))
     detections: list[FireDetection] = []
     for row in reader:
-        frp_raw = row.get("frp", "").strip()
-        detections.append(
-            FireDetection(
-                latitude=float(row["latitude"]),
-                longitude=float(row["longitude"]),
-                detected_at=_parse_detected_at(row["acq_date"], row["acq_time"]),
-                frp=float(frp_raw) if frp_raw else None,
-                confidence=row["confidence"],
-                satellite=row["satellite"],
-                instrument=row["instrument"],
+        # row.get(...) puede devolver None (no solo levantar KeyError) si
+        # una fila truncada a mitad de columna deja menos valores que
+        # encabezados — csv.DictReader rellena esos con None, no "".
+        frp_raw = (row.get("frp") or "").strip()
+        try:
+            detections.append(
+                FireDetection(
+                    latitude=float(row["latitude"]),
+                    longitude=float(row["longitude"]),
+                    detected_at=_parse_detected_at(row["acq_date"], row["acq_time"]),
+                    frp=float(frp_raw) if frp_raw else None,
+                    confidence=row["confidence"],
+                    satellite=row["satellite"],
+                    instrument=row["instrument"],
+                )
             )
-        )
+        except KeyError as exc:
+            raise ValueError(
+                f"Fila de CSV de FIRMS sin la columna requerida {exc}: {row!r}"
+            ) from exc
     return detections

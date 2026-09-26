@@ -3,8 +3,13 @@
 ## NASA FIRMS
 
 **Qué entrega:** detecciones activas de fuego casi en tiempo real
-(VIIRS 375 m por defecto en este proyecto; también soporta MODIS 1 km y
-LANDSAT, ver `--sensor`).
+(VIIRS 375 m por defecto en este proyecto). El Area API también acepta
+MODIS 1 km vía `--sensor` (`MODIS_NRT`/`MODIS_SP`); LANDSAT
+(`LANDSAT_NRT`) **es exclusivo de EE.UU./Canadá** y no sirve para Chile
+pese a estar en la lista de `SOURCE` válidos. Solo los sensores
+`VIIRS_*` están probados end-to-end en este proyecto — `MODIS_*` usa
+una escala de `confidence` numérica distinta (ver más abajo) que no se
+ha ejercitado con datos reales.
 
 **Cómo obtener el MAP_KEY (gratuito):**
 1. Ir a https://firms.modaps.eosdis.nasa.gov/api/map_key/

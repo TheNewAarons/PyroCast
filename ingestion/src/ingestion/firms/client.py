@@ -21,7 +21,7 @@ etc.) se levanta de inmediato como FirmsApiError, sin reintentar.
 """
 import datetime as dt
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import requests
 
@@ -57,6 +57,9 @@ class FirmsClient:
         self._monotonic_fn = monotonic_fn
         self._last_request_at: float | None = None
 
+    def _redact(self, message: str) -> str:
+        return message.replace(self._map_key, "<MAP_KEY>")
+
     def _rate_limit(self) -> None:
         if self._last_request_at is None:
             return
@@ -87,7 +90,20 @@ class FirmsClient:
         while True:
             self._rate_limit()
             self._last_request_at = self._monotonic_fn()
-            response = self._session.get(url, timeout=30)
+            try:
+                response = self._session.get(url, timeout=30)
+            except requests.RequestException as exc:
+                if attempt < self._max_retries:
+                    self._sleep_fn(self._backoff_base_seconds * (2**attempt))
+                    attempt += 1
+                    continue
+                # from None: requests' own exception message embeds the
+                # full URL (MAP_KEY included) — a chained traceback would
+                # re-leak it even though this message is redacted.
+                raise FirmsApiError(
+                    f"Fallo de transporte tras {attempt} reintento(s): "
+                    f"{self._redact(str(exc))}"
+                ) from None
 
             if response.status_code == 200:
                 body = response.text
@@ -104,7 +120,7 @@ class FirmsClient:
 
             raise FirmsApiError(
                 f"FIRMS Area API devolvió estado {response.status_code} tras "
-                f"{attempt} reintento(s): {response.text[:200]!r}"
+                f"{attempt} reintento(s): {self._redact(response.text[:200])!r}"
             )
 
     def _chunk_date_range(self, start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
@@ -124,10 +140,12 @@ class FirmsClient:
         sensor: str,
         start: dt.date,
         end: dt.date,
-    ) -> list[tuple[dt.date, dt.date, str]]:
-        results: list[tuple[dt.date, dt.date, str]] = []
+    ) -> Iterator[tuple[dt.date, dt.date, str]]:
+        # Generador, no lista: si un chunk falla a mitad de un rango largo,
+        # los chunks ya descargados deben quedar persistidos por el
+        # llamador (ver ingestion/firms/cli.py) en vez de perderse junto
+        # con el resto de la respuesta.
         for chunk_start, chunk_end in self._chunk_date_range(start, end):
             day_range = (chunk_end - chunk_start).days + 1
             raw = self.fetch_area_csv(bbox, sensor=sensor, day_range=day_range, date=chunk_start)
-            results.append((chunk_start, chunk_end, raw))
-        return results
+            yield (chunk_start, chunk_end, raw)
