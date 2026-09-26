@@ -10,6 +10,9 @@ dependencies = [
     "pyarrow>=17.0",
 ]
 
+[project.scripts]
+pyrocast-ingest = "ingestion.cli:app"
+
 [tool.uv.sources]
 shared = { workspace = true }
 

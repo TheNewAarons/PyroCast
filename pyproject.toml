@@ -21,6 +21,13 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# B008 flags function calls in argument defaults, but Typer's CLI option
+# API (typer.Option(...) / typer.Argument(...) as a parameter default)
+# requires exactly that pattern by design — not the mutable-default
+# footgun the rule exists to catch.
+"**/cli.py" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = false

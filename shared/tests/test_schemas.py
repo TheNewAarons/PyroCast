@@ -1,5 +1,5 @@
 """Tests de shared.schemas: el modelo normalizado de detecciones de fuego."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ def test_fire_detection_accepts_valid_fields():
     detection = FireDetection(
         latitude=-37.4689,
         longitude=-72.3524,
-        detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=timezone.utc),
+        detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=UTC),
         frp=12.3,
         confidence="n",
         satellite="N",
@@ -25,7 +25,7 @@ def test_fire_detection_allows_frp_none():
     detection = FireDetection(
         latitude=-37.4689,
         longitude=-72.3524,
-        detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=timezone.utc),
+        detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=UTC),
         frp=None,
         confidence="low",
         satellite="Terra",
@@ -39,7 +39,7 @@ def test_fire_detection_rejects_out_of_range_latitude():
         FireDetection(
             latitude=95.0,
             longitude=-72.3524,
-            detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=timezone.utc),
+            detected_at=datetime(2026, 1, 15, 5, 12, tzinfo=UTC),
             frp=None,
             confidence="n",
             satellite="N",
