@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+uv.lock.bak
+
+# Env / secrets
+.env
+*.env.local
+
+# Data (never committed — see docker-compose volume)
+data/raw/
+data/interim/
+data/processed/
+*.tif
+*.nc
+*.zarr/
+
+# OS
+.DS_Store
+
+# superpowers scratch workspace
+.superpowers/
