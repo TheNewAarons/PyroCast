@@ -27,7 +27,12 @@ ingest-weather:
 	uv run --package ingestion pyrocast-ingest era5 --start $(START) --end $(END)
 
 ingest-vegetation:
-	@echo "pendiente: módulos ingestion/sentinel2 e ingestion/worldcover aún no implementados"
+	@if [ -z "$(YEAR)" ] || [ -z "$(MONTH)" ]; then \
+		echo "uso: make ingest-vegetation YEAR=YYYY MONTH=M"; \
+		exit 1; \
+	fi
+	uv run --package ingestion pyrocast-ingest sentinel2 --year $(YEAR) --month $(MONTH)
+	uv run --package ingestion pyrocast-ingest worldcover
 
 build-dataset:
 	@echo "pendiente: features/dataset aún no implementado"
