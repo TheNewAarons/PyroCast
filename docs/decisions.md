@@ -664,3 +664,64 @@ loop (ineficiente, no incorrecto); el CLI no valida `--end >= --start`
 (a diferencia de `ingestion/firms/cli.py`); falta el aviso de
 "herramienta de investigación" en `dataset-card.md` (consistente con
 `fire-events.md`/`data-sources.md`, no una regresión nueva).
+
+## `models/cellular_automata/`: tabla de flammability duplicada desde `ingestion/worldcover/fuel_type.py`
+
+`models/cellular_automata/rules.py::DEFAULT_FUEL_FLAMMABILITY` usa los
+mismos códigos enteros de tipo de combustible simplificado que
+`ingestion/worldcover/fuel_type.py` ya define, sin importar ese módulo
+directamente — importar desde `ingestion` invertiría la dirección de
+dependencia establecida (`ingestion` → `features`/`models`, nunca al
+revés), exactamente el mismo caso ya resuelto para `CLOUD_SCL_CLASSES`
+entre `ingestion/sentinel2` y `features/vegetation`. Si los códigos de
+`ingestion/worldcover/fuel_type.py` cambiaran, esta tabla quedaría
+desincronizada silenciosamente — mantenerlas en sync es manual.
+
+## `models/evaluation/metrics.py` implementado directamente en su ubicación final de P8
+
+El enunciado pidió las métricas de evaluación (IoU, Brier score) "aunque
+aún no exista el módulo completo" de `models/evaluation/`, con la
+instrucción explícita de moverlas ahí en P8 "sin duplicar código". En vez
+de crearlas dentro de `models/cellular_automata/` y planear un movimiento
+futuro, se crearon DIRECTAMENTE en `models/evaluation/metrics.py` desde
+el principio — cuando P8 (calibración isotónica, backtesting) se
+implemente, reutiliza estas mismas funciones sin ningún movimiento de
+archivo ni duplicación.
+
+## `models/src` no se agrega a `make typecheck` en este plan
+
+CLAUDE.md especifica `mypy --strict` en `shared/` y `features/`
+únicamente; el Makefile's `typecheck` target refleja eso. Este plan
+verifica `mypy --strict models/src/models/cellular_automata` (y
+`models/cli.py`) tarea por tarea, y pasa limpio, pero no modifica el
+Makefile para agregar todo `models/src` a `make typecheck` — los stubs
+pre-existentes `models/deep/__init__.py` no fueron verificados contra
+`--strict` y podrían no pasar. Ampliar la cobertura de `mypy --strict` a
+todo `models/` queda como una decisión separada, más grande, para cuando
+`models/deep`/`models/evaluation` completo se implementen.
+
+## `typer` agregado a `models/pyproject.toml`
+
+`models/cli.py` (el nuevo comando `pyrocast-models run-ca`) necesita
+`typer` — no estaba entre las dependencias de `models` (que hasta ahora
+era una librería pura, sin CLI propio). Se agrega como dependencia
+directa, mismo patrón que `ingestion`/`features`.
+
+## `_score_sample` de `calibrate.py`: comparación de un solo paso
+
+`TrainingSample` solo carga `observed_final_mask` (el estado final
+relevante para entrenar), no una trayectoria diaria completa —
+`_score_sample` simula exactamente UN día desde `initial_burning` del
+propio sample y compara ese resultado directamente contra
+`observed_final_mask`. Esto solo tiene sentido literal cuando la
+"máscara final" del sample es alcanzable en un solo paso simulado desde
+su condición inicial declarada — cierto para los tests de este módulo
+(construidos así a propósito), pero un sample real de un evento
+multi-día de `features/fire_state` necesitaría o bien su propio
+`initial_burning` por día (el estado al INICIO del día que se está
+puntuando), o que la calibración corra la trayectoria completa
+multi-día y compare la probabilidad del ÚLTIMO día contra la máscara
+observada del último día. Documentado como limitación conocida en
+`docs/limitations.md` — no se rediseñó dentro de este plan porque no
+hay todavía datos de entrenamiento reales (de `features/dataset/`) que
+forzaran la forma correcta de `TrainingSample` para el caso multi-día.

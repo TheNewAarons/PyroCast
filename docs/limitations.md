@@ -156,6 +156,35 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   historial real de FIRMS de Chile (dos satélites VIIRS pueden detectar
   el mismo incendio con timestamps/coordenadas ligeramente distintos, lo
   cual es correcto que NO se deduplique). Ver `docs/dataset-card.md`.
+- **Autómata celular: sin modelo de extinción/consumo de combustible**:
+  `models/cellular_automata/simulate.py` trata el estado "en llamas" como
+  monótono — una celda encendida nunca se "apaga" dentro del horizonte
+  simulado. Un incendio real se extingue al consumir el combustible
+  disponible; esto no está modelado. Ver `docs/cellular-automata.md`.
+- **Autómata celular: parámetros libres sin calibrar contra incendios
+  reales**: `base_spread_prob=0.3`, `slope_coefficient=4.0`,
+  `wind_coefficient=0.2` y la tabla `fuel_flammability` son heurísticas
+  elegidas para que el comportamiento cualitativo pedido (más vecinos en
+  llamas = mayor probabilidad, cuesta arriba más rápido, a favor del
+  viento se alarga) sea verificable, no un ajuste contra el historial
+  real de incendios de Chile. `calibrate.py` existe pero necesita
+  eventos de entrenamiento reales (de `features/dataset/`, que a su vez
+  necesita datos ingeridos reales) para producir valores con algún
+  sentido — ver `docs/dataset-card.md`.
+- **`calibrate.py` solo calibra los tres parámetros escalares**:
+  `fuel_flammability` (un dict, no un escalar) no participa del grid
+  search — calibrarlo requeriría un espacio de búsqueda combinatorio
+  mucho más costoso. Queda como trabajo futuro.
+- **`calibrate.py`'s scoring de un solo paso**: `TrainingSample` compara
+  contra `observed_final_mask` simulando un único día desde
+  `initial_burning` — válido para eventos de un paso, pero requeriría
+  ajustarse (ejecutar la trayectoria completa de varios días) para
+  calibrar contra un evento real de `features/dataset/` que abarca
+  varios días.
+- **8 direcciones (vecindad de Moore), no propagación continua**: la
+  distancia diagonal se calcula correctamente (`resolución_m·√2`), pero
+  la resolución angular de la propagación está limitada a 8 direcciones
+  discretas por celda — un frente de fuego real no está limitado así.
 
 ## Herramienta de investigación
 
