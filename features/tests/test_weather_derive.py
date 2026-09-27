@@ -78,7 +78,8 @@ def test_compute_and_save_weather_writes_geotiffs_at_target_resolution(tmp_path)
     )
 
     assert set(paths) == {
-        "wind_speed", "wind_direction", "relative_humidity", "temperature", "precipitation"
+        "wind_speed", "wind_direction", "wind_u", "wind_v",
+        "relative_humidity", "temperature", "precipitation"
     }
     for per_date in paths.values():
         assert set(per_date) == {"2026-01-15"}
@@ -134,6 +135,26 @@ def test_compute_and_save_weather_marks_source_nodata_cells_as_nodata_not_zero(t
         arr = ds_out.read(1)
     # ninguna celda de origen sin dato debe sobrevivir como 0.0 fabricado
     assert not np.any(arr == 0.0)
+
+
+def test_compute_and_save_weather_wind_components_match_source_u10_v10(tmp_path):
+    lat = np.array([-36.0, -37.0, -38.0, -39.0])
+    lon = np.array([-74.0, -73.0, -72.0, -71.0])
+    daily_nc = tmp_path / "daily.nc"
+    _write_synthetic_daily_nc(daily_nc, lat, lon)  # fixture: u10=2.0, v10=3.0 uniforme
+
+    output_dir = tmp_path / "weather"
+    paths = compute_and_save_weather(
+        daily_nc, output_dir, target_crs="EPSG:32719", target_resolution_m=250
+    )
+
+    with rasterio.open(paths["wind_u"]["2026-01-15"]) as ds:
+        u = ds.read(1)
+    with rasterio.open(paths["wind_v"]["2026-01-15"]) as ds:
+        v = ds.read(1)
+    # campo uniforme en el origen -> uniforme tras reproyección bilineal
+    assert np.allclose(u[~np.isnan(u)], 2.0, atol=1e-3)
+    assert np.allclose(v[~np.isnan(v)], 3.0, atol=1e-3)
 
 
 def test_compute_and_save_weather_handles_ascending_latitude_input(tmp_path):

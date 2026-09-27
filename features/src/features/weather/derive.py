@@ -122,8 +122,8 @@ def compute_and_save_weather(
 ) -> dict[str, dict[str, Path]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, dict[str, Path]] = {
-        "wind_speed": {}, "wind_direction": {}, "relative_humidity": {},
-        "temperature": {}, "precipitation": {},
+        "wind_speed": {}, "wind_direction": {}, "wind_u": {}, "wind_v": {},
+        "relative_humidity": {}, "temperature": {}, "precipitation": {},
     }
 
     with xr.open_dataset(daily_nc_path, engine="h5netcdf") as ds:
@@ -149,6 +149,8 @@ def compute_and_save_weather(
             day_fields = {
                 "wind_speed": speed,
                 "wind_direction": direction,
+                "wind_u": fields["u10"],
+                "wind_v": fields["v10"],
                 "relative_humidity": rh,
                 "temperature": fields["t2m"],
                 "precipitation": fields["tp"],
