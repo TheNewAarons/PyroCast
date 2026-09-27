@@ -18,7 +18,19 @@ def test_metadata_has_expected_tables():
 
 def test_fire_event_columns():
     cols = set(fire_event.columns.keys())
-    assert {"id", "bbox", "start_date", "end_date", "source", "geom"} <= cols
+    assert {"id", "bbox", "start_date", "end_date", "source", "geom", "firms_event_id"} <= cols
+
+
+def test_fire_event_firms_event_id_is_unique_and_nullable():
+    # firms_event_id enlaza esta fila con el event_id (hash de contenido,
+    # potencialmente > 2^31) que features/dataset/ usa para nombrar el
+    # Zarr y el split -- sin esto, nada conecta un archivo Zarr con su
+    # fila de PostGIS (encontrado en la revisión final del 2026-09-27).
+    # nullable=True: un evento catalogado por CONAF/SENAPRED, no
+    # derivado de un clustering de FIRMS, no tiene este id.
+    column = fire_event.c.firms_event_id
+    assert column.nullable is True
+    assert column.unique is True
 
 
 def test_model_run_has_fk_to_fire_event():

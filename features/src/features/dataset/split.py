@@ -25,8 +25,22 @@ def split_events(
     rng.shuffle(shuffled)
 
     n = len(shuffled)
-    n_train = round(n * train_frac)
-    n_val = round(n * val_frac)
+    if n < 3:
+        # sin eventos suficientes para un split con sentido -- todo a
+        # train, explícito, no un val/test vacío "por accidente" del
+        # redondeo (encontrado en la revisión final del 2026-09-27: antes
+        # de este fix, n=3..5 podían dejar val o test vacíos sin avisar,
+        # contradiciendo el 70/15/15 documentado en docs/dataset-card.md).
+        return {"train": shuffled, "val": [], "test": []}
+
+    n_val = max(1, round(n * val_frac))
+    n_test = max(1, round(n * (1 - train_frac - val_frac)))
+    while n_val + n_test >= n:
+        if n_val >= n_test:
+            n_val -= 1
+        else:
+            n_test -= 1
+    n_train = n - n_val - n_test
 
     return {
         "train": shuffled[:n_train],

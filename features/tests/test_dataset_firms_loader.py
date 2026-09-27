@@ -77,6 +77,28 @@ def test_load_firms_detections_returns_empty_list_when_no_files(tmp_path):
     assert load_firms_detections(tmp_path, dt.date(2026, 1, 1), dt.date(2026, 1, 31)) == []
 
 
+def test_load_firms_detections_deduplicates_across_overlapping_parquet_files(tmp_path):
+    # Re-correr `make ingest-firms` para el mismo rango en un día
+    # distinto escribe una SEGUNDA partición `download_date=...` con las
+    # mismas filas -- sin dedup, la misma detección física cuenta dos
+    # veces, cambiando `event_id` (hash de contenido) y el conteo de
+    # detecciones del evento. Encontrado en la revisión final del
+    # 2026-09-27.
+    row = {
+        "latitude": "-37.5", "longitude": "-72.3", "acq_date": "2026-01-15",
+        "acq_time": "0130", "confidence": "n", "satellite": "N",
+        "instrument": "VIIRS", "frp": "1.0",
+    }
+    _write_fixture_parquet(tmp_path, [row], "chunk_run1.parquet")
+    partition_dir_2 = tmp_path / "firms" / "download_date=2026-01-21"
+    partition_dir_2.mkdir(parents=True, exist_ok=True)
+    table = pa.table({name: pa.array([value]) for name, value in row.items()})
+    pq.write_table(table, partition_dir_2 / "chunk_run2.parquet")
+
+    detections = load_firms_detections(tmp_path, dt.date(2026, 1, 15), dt.date(2026, 1, 15))
+    assert len(detections) == 1
+
+
 def test_load_firms_detections_reads_across_multiple_parquet_files(tmp_path):
     _write_fixture_parquet(
         tmp_path,

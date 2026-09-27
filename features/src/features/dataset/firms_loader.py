@@ -29,12 +29,29 @@ def load_firms_detections(
         return []
 
     detections: list[FireDetection] = []
+    # Re-correr `pyrocast-ingest firms` para un rango ya cubierto (p. ej.
+    # en un día de descarga distinto) escribe una partición NUEVA con las
+    # mismas filas -- sin dedup, la misma detección física física se
+    # cuenta dos veces, cambiando silenciosamente el event_id (hash de
+    # contenido) y el conteo de detecciones del evento. Se deduplica por
+    # (fecha/hora, coordenadas redondeadas, satélite): dos overpasses
+    # reales distintos casi nunca coinciden en los tres a la vez.
+    seen: set[tuple[str, float, float, str]] = set()
     for parquet_path in sorted(firms_dir.glob("**/*.parquet")):
         table = pq.read_table(parquet_path)
         for row in table.to_pylist():
             acq_date = dt.date.fromisoformat(row["acq_date"])
             if not (start <= acq_date <= end):
                 continue
+            dedup_key = (
+                row["acq_date"] + row["acq_time"],
+                round(float(row["latitude"]), 6),
+                round(float(row["longitude"]), 6),
+                row["satellite"],
+            )
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
             frp_raw = (row.get("frp") or "").strip()
             detections.append(
                 FireDetection(

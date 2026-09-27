@@ -39,7 +39,10 @@ def test_resample_to_grid_nearest_never_fabricates_class_codes(tmp_path):
     grid = build_grid((-72.51, -38.01, -72.49, -37.99), "EPSG:32719", 250.0)
     result = resample_to_grid(src_path, grid, Resampling.nearest)
     present = set(np.unique(result[~np.isnan(result)]))
-    assert present <= {10.0, 80.0}
+    # == , no <=: un mutante que devolviera todo-NaN (conjunto vacío)
+    # también satisfaría "<=" -- encontrado en la revisión final del
+    # 2026-09-27. Ambas clases reales deben aparecer.
+    assert present == {10.0, 80.0}
 
 
 def test_resample_to_grid_propagates_source_nodata(tmp_path):
@@ -55,3 +58,10 @@ def test_resample_to_grid_propagates_source_nodata(tmp_path):
     grid = build_grid((-72.51, -38.01, -72.49, -37.99), "EPSG:32719", 250.0)
     result = resample_to_grid(src_path, grid, Resampling.bilinear)
     assert np.any(np.isnan(result))  # el hueco de origen no se fabrica como 5.0
+    # la región válida (fuera del hueco) debe seguir siendo 5.0 real --
+    # un mutante que devolviera todo-NaN también pasaría solo la
+    # aserción de arriba (encontrado en la revisión final del
+    # 2026-09-27).
+    finite = result[~np.isnan(result)]
+    assert finite.size > 0
+    assert np.allclose(finite, 5.0, atol=1e-3)

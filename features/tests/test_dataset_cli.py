@@ -6,7 +6,9 @@ import json
 
 import numpy as np
 import rasterio
+import xarray as xr
 from features.cli import app
+from features.dataset.assemble import CHANNEL_ORDER
 from rasterio.transform import from_origin
 from shared.schemas import FireDetection
 from typer.testing import CliRunner
@@ -73,9 +75,10 @@ def test_build_dataset_cli_produces_at_least_one_zarr_event(tmp_path, monkeypatc
         )
 
     monkeypatch.setattr("features.cli.resolve_event_sources", fake_resolve_event_sources)
+    persisted_calls: list[dict] = []
     monkeypatch.setattr(
         "features.cli.persist_fire_event_metadata",
-        lambda **kwargs: 1,
+        lambda **kwargs: persisted_calls.append(kwargs) or 1,
     )
 
     result = runner.invoke(app, ["build-dataset", "--start", "2026-01-10", "--end", "2026-01-15"])
@@ -85,8 +88,26 @@ def test_build_dataset_cli_produces_at_least_one_zarr_event(tmp_path, monkeypatc
     zarr_dirs = list(dataset_dir.glob("event_*.zarr"))
     assert len(zarr_dirs) >= 1
 
+    # abrir el Zarr real y verificar su forma/orden de canales -- antes,
+    # el test solo comprobaba que EXISTIERA algún directorio "event_*.zarr",
+    # lo que un `split_events` roto o un tensor vacío también satisfaría
+    # (encontrado en la revisión final del 2026-09-27).
+    reopened = xr.open_zarr(zarr_dirs[0])
+    tensor = reopened["fire_event_tensor"]
+    assert tensor.dims == ("day", "channel", "y", "x")
+    assert list(tensor.coords["channel"].values) == list(CHANNEL_ORDER)
+    assert tensor.shape[0] > 0
+
+    # la metadata persistida debe llevar el mismo event_id que nombra el
+    # Zarr.
+    assert len(persisted_calls) == len(zarr_dirs)
+    zarr_event_id = int(zarr_dirs[0].stem.removeprefix("event_"))
+    assert any(call["event_id"] == zarr_event_id for call in persisted_calls)
+
     splits_path = dataset_dir / "splits.json"
     assert splits_path.exists()
     splits = json.loads(splits_path.read_text())
     assert set(splits) == {"train", "val", "test"}
+    all_split_ids = splits["train"] + splits["val"] + splits["test"]
+    assert sorted(all_split_ids) == sorted(call["event_id"] for call in persisted_calls)
     get_settings.cache_clear()

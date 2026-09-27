@@ -141,6 +141,21 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   de estudio completa**: dos tensores de eventos distintos no son
   comparables píxel a píxel sin un paso de reproyección adicional — ver
   `docs/dataset-card.md`.
+- **`features/dataset/`: `pyrocast-features build-dataset` no es
+  transaccional entre eventos**: un fallo a mitad de una corrida con
+  varios eventos deja los anteriores con Zarr escrito y fila de PostGIS
+  insertada/actualizada (el upsert por `firms_event_id` hace esto
+  seguro para re-intentos), pero sin `splits.json` y sin un resumen de
+  qué evento falló. Encontrado en la revisión final del 2026-09-27, ver
+  `docs/dataset-card.md`.
+- **`features/dataset/`: deduplicación de detecciones FIRMS no
+  verificada contra datos reales**: `firms_loader.py` deduplica por
+  `(fecha/hora, lat/lon redondeados a 6 decimales, satélite)` — asume
+  que dos detecciones físicas distintas casi nunca coinciden en los tres
+  campos, una suposición razonable pero no verificada contra el
+  historial real de FIRMS de Chile (dos satélites VIIRS pueden detectar
+  el mismo incendio con timestamps/coordenadas ligeramente distintos, lo
+  cual es correcto que NO se deduplique). Ver `docs/dataset-card.md`.
 
 ## Herramienta de investigación
 

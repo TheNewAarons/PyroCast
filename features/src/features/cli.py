@@ -9,7 +9,11 @@ from sqlalchemy import create_engine
 from features.dataset.assemble import save_event_to_zarr
 from features.dataset.db import persist_fire_event_metadata
 from features.dataset.firms_loader import load_firms_detections
-from features.dataset.pipeline import build_dataset_for_event, resolve_event_sources
+from features.dataset.pipeline import (
+    build_dataset_for_event,
+    padded_days_for_event,
+    resolve_event_sources,
+)
 from features.dataset.split import split_events
 from features.fire_state.clustering import build_fire_events
 
@@ -46,14 +50,14 @@ def build_dataset(
 
     event_ids: list[int] = []
     for event in events:
-        padded_start = event.start_date - dt.timedelta(days=5)
-        days = [
-            padded_start + dt.timedelta(days=i)
-            for i in range((event.end_date - padded_start).days + 1)
-        ]
+        # padded_days_for_event es el ÚNICO lugar que calcula esta
+        # ventana -- antes recalculaba un `5` hardcodeado por su cuenta,
+        # pudiendo desincronizarse de DEFAULT_PRE_EVENT_PADDING_DAYS
+        # (encontrado en la revisión final del 2026-09-27).
+        days = padded_days_for_event(event)
         sources = resolve_event_sources(days, settings)
         tensor, bbox_cut = build_dataset_for_event(
-            event, sources, settings.spatial_resolution_m, settings.crs
+            event, sources, settings.spatial_resolution_m, settings.crs, event_id=event.event_id
         )
         zarr_path = save_event_to_zarr(tensor, output_dir, event.event_id)
         persist_fire_event_metadata(

@@ -46,6 +46,31 @@ def test_persist_fire_event_metadata_roundtrip_against_real_postgis():
             select(fire_event.c.bbox).where(fire_event.c.id == event_id)
         ).scalar_one()
         assert stored_bbox == "-72.9,-38.9,-72.1,-38.1"
+        stored_firms_event_id = conn.execute(
+            select(fire_event.c.firms_event_id).where(fire_event.c.id == event_id)
+        ).scalar_one()
+        assert stored_firms_event_id == 1
+
+        # re-correr con el MISMO firms_event_id pero un bbox distinto
+        # debe ACTUALIZAR la fila existente (upsert), no insertar una
+        # segunda -- simula re-correr build-dataset para el mismo evento
+        # (encontrado en la revisión final del 2026-09-27).
+        same_row_id = persist_fire_event_metadata(
+            engine=conn,
+            event_id=1,
+            bbox_cut=(-73.0, -39.0, -72.0, -38.0),
+            start_date=dt.date(2026, 1, 15),
+            end_date=dt.date(2026, 1, 21),
+        )
+        assert same_row_id == event_id
+        updated_bbox = conn.execute(
+            select(fire_event.c.bbox).where(fire_event.c.id == event_id)
+        ).scalar_one()
+        assert updated_bbox == "-73.0,-39.0,-72.0,-38.0"
+        matching_rows = conn.execute(
+            select(fire_event.c.id).where(fire_event.c.firms_event_id == 1)
+        ).all()
+        assert len(matching_rows) == 1
     finally:
         trans.rollback()
         conn.close()

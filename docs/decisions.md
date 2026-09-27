@@ -564,3 +564,103 @@ colisión de hash entre dos eventos físicos distintos es posible en
 principio (espacio de 32 bits) pero, al volumen de detecciones de este
 proyecto, del mismo orden de riesgo que una colisión de hash corto de
 git; no se agregó detección de colisión.
+
+## Revisión final de `features/dataset/`: hallazgos y correcciones (2026-09-27)
+
+La revisión de branch completo encontró 2 hallazgos Críticos y 12
+Importantes. Se corrigieron ambos Críticos y 9 de los 12 Importantes en
+un único fix pass, cada uno con test RED→GREEN propio.
+
+**Críticos corregidos:**
+- **`build_dataset_for_event` devolvía `grid.bounds` (EPSG:32719,
+  metros) como si fuera el bbox WGS84** — se persistía en PostGIS
+  etiquetado `SRID=4326` con una "latitud" de millones de metros, un
+  polígono geométricamente sin sentido que PostGIS acepta sin quejarse
+  (`Geometry`, a diferencia de `geography`, no valida rango). Corregido:
+  se devuelve `event_bbox` (ya calculado en WGS84) en vez de
+  `grid.bounds`.
+- **`aspect_deg` se resampleaba con `Resampling.bilinear`** — es una
+  magnitud CIRCULAR (0-360° más el sentinel -1 para plano), no continua
+  en el sentido que bilineal asume: interpolar 358° y 2° (ambos "casi
+  norte") da ~180° (sur), un error de 180 grados en la variable que
+  alimenta el término de viento/pendiente del autómata celular. Medido:
+  100% de una ladera norte homogénea salía "sur" tras el resampleo.
+  Corregido a `Resampling.nearest` (mismo criterio que `fuel_type`, pero
+  por una razón distinta — circular, no categórica).
+
+**Importantes corregidos:**
+- El mismo `DEFAULT_BUFFER_M` (radio de la máscara de fuego, 375 m) se
+  usaba también para el buffer espacial del bbox del evento — un evento
+  de una detección terminaba con un tensor de 4x4 píxeles. Separado en
+  dos parámetros: `fire_buffer_m` (máscara) y `context_buffer_m`
+  (contexto espacial del tensor, default 2000 m).
+- `firms_loader.py` no deduplicaba detecciones — re-ingerir el mismo
+  rango, o cubrir el mismo período con dos satélites VIIRS, duplicaba la
+  detección física en el parquet crudo, cambiando el `event_id` estable
+  (el hash de contenido retiene duplicados) y defeando el propósito del
+  fix de `event_id` de la revisión anterior. Corregido: dedup por
+  `(fecha/hora, lat/lon redondeados a 6 decimales, satélite)`.
+- `split_events` podía dejar `val` o `test` completamente vacíos para
+  3-5 eventos, contradiciendo el 70/15/15 documentado. Corregido:
+  garantiza al menos 1 evento por split a partir de n=3; con menos de 3,
+  todo va a `train` explícitamente.
+- `_nearest_month_path` resolvía empates de distancia según el orden de
+  iteración del dict (a su vez dependiente de un `glob()` sin orden
+  garantizado) — no determinista en la práctica. Corregido: `sorted()`
+  antes de buscar el mínimo, el mes más antiguo gana la empatada siempre.
+- `_nearest_month_path` no tenía distancia máxima — un composite NDVI de
+  años de antigüedad se presentaba como si fuera el estado vigente de la
+  vegetación. Corregido: `max_month_distance` (default 3 meses en el
+  llamador), más allá de eso NaN explícito.
+- El tensor Zarr no llevaba coords `x`/`y` ni atributos de CRS/transform/
+  `event_id` — no había forma de recuperar la ubicación real de un
+  píxel, ni de qué evento era, a partir solo del Zarr. Corregido:
+  `assemble_event_tensor` ahora recibe la `WorkGrid` del evento y su
+  `event_id`, y los escribe como coords/atributos.
+- `features/cli.py` recalculaba la ventana de padding con un `5`
+  hardcodeado en vez de usar `DEFAULT_PRE_EVENT_PADDING_DAYS` — podían
+  desincronizarse. Corregido: `padded_days_for_event()`, único lugar que
+  calcula esa ventana, usado tanto por el CLI como por
+  `build_dataset_for_event`.
+- Un día de clima con UN solo campo faltante (p. ej. `precipitation`) se
+  trataba como "sin clima ese día", descartando las otras 4 capas reales
+  a NaN. Corregido: `resolve_event_sources` conserva los campos que sí
+  existen por día, en vez de todo-o-nada.
+- `fire_event` no tenía columna para enlazar con el `event_id` de
+  `features/fire_state` (hash de contenido, potencialmente > 2^31 —
+  desborda `Integer` de Postgres). Agregada `firms_event_id`
+  (`BigInteger`, `UNIQUE`, `nullable=True` — un evento catalogado por
+  CONAF/SENAPRED no tiene este id). `persist_fire_event_metadata` ahora
+  hace upsert (`INSERT ... ON CONFLICT (firms_event_id) DO UPDATE`) en
+  vez de un `insert` liso — re-correr `build-dataset` para el mismo
+  evento actualiza su fila en vez de duplicarla.
+- Varias aserciones de test no discriminaban entre una implementación
+  correcta y una rota (`present <= {...}` en vez de `==`, ausencia de
+  aserciones sobre `bbox_cut`/`fire_mask==1`/apertura real del Zarr en
+  el smoke test del CLI). Fortalecidas junto con cada fix de arriba.
+
+**Ruling explícito — partial-failure no transaccional (Importante,
+diferido):** `pyrocast-features build-dataset` no envuelve el loop sobre
+eventos en manejo de excepciones; si un evento falla a mitad de camino,
+los anteriores quedan con Zarr escrito y fila de PostGIS
+insertada/actualizada, pero `splits.json` (escrito al final) no existe.
+El upsert por `firms_event_id` (arriba) hace que re-correr el comando
+sea seguro para PostGIS, y `save_event_to_zarr` sobrescribe — pero no
+hay un resumen de qué eventos fallaron ni un intento de continuar tras
+un fallo puntual. Se documenta honestamente en `docs/dataset-card.md` en
+vez de forzar un rediseño transaccional completo dentro de este fix
+pass — costo si esta decisión es incorrecta: una corrida larga que falla
+a mitad de camino requiere inspeccionar manualmente qué eventos
+terminaron de procesarse.
+
+**Minor deferidos (no corregidos):** `fuel_type.tif` con `nodata=99`
+(código real de "desconocido") convierte esas celdas a NaN en vez de
+distinguir "desconocido real" de "sin dato"; `event_{id:04d}.zarr` con
+id-hash de más de 4 dígitos hace que el `:04d` sea vestigial (el
+nombrado sigue siendo correcto, solo el padding es cosmético); un
+`ndvi_*.tif` con nombre de mes malformado lanza `ValueError` sin
+capturar; `resolve_event_sources` re-glob-ea el DEM en cada evento del
+loop (ineficiente, no incorrecto); el CLI no valida `--end >= --start`
+(a diferencia de `ingestion/firms/cli.py`); falta el aviso de
+"herramienta de investigación" en `dataset-card.md` (consistente con
+`fire-events.md`/`data-sources.md`, no una regresión nueva).

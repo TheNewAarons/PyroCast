@@ -7,6 +7,7 @@ evaluation_result (métricas de esa ejecución, por split train/val/test).
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Column,
     Date,
     DateTime,
@@ -30,6 +31,15 @@ fire_event = Table(
     Column("end_date", Date, nullable=True),
     Column("source", String, nullable=False),
     Column("geom", Geometry(geometry_type="POLYGON", srid=4326), nullable=False),
+    # enlaza esta fila con el event_id (hash de contenido derivado de
+    # features/fire_state/clustering.py, potencialmente > 2^31 -- de ahí
+    # BigInteger, no Integer) que features/dataset/ usa para nombrar el
+    # Zarr y para las claves de splits.json. nullable=True: un evento
+    # catalogado por CONAF/SENAPRED, no derivado de clustering de FIRMS,
+    # no tiene este id. Encontrado en la revisión final del 2026-09-27:
+    # sin esta columna, nada conectaba un archivo Zarr con su fila de
+    # PostGIS.
+    Column("firms_event_id", BigInteger, nullable=True, unique=True),
 )
 
 model_run = Table(

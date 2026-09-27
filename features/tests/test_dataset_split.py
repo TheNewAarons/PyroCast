@@ -26,6 +26,26 @@ def test_split_events_handles_small_event_count_without_crashing():
     assert sorted(all_assigned) == event_ids
 
 
+def test_split_events_guarantees_at_least_one_per_split_when_n_is_at_least_three():
+    # Antes del fix, n=3..5 podian dejar val o test completamente vacios
+    # (contradiciendo el 70/15/15 documentado) -- verificado en la
+    # revision final del 2026-09-27. A partir de 3 eventos, cada split
+    # debe tener al menos 1.
+    for n in range(3, 12):
+        splits = split_events(list(range(n)), seed=1)
+        assert len(splits["train"]) >= 1
+        assert len(splits["val"]) >= 1
+        assert len(splits["test"]) >= 1
+        assert sum(len(v) for v in splits.values()) == n
+
+
+def test_split_events_with_fewer_than_three_events_puts_everything_in_train():
+    # Sin suficientes eventos para un split con sentido, todo va a train
+    # -- documentado explicitamente, no un accidente silencioso.
+    assert split_events([1], seed=1) == {"train": [1], "val": [], "test": []}
+    assert sorted(split_events([1, 2], seed=1)["train"]) == [1, 2]
+
+
 def test_split_events_input_order_does_not_change_the_result():
     # el split depende del contenido del conjunto de ids, no del orden en
     # que la lista de entrada los trae (los ids se ordenan antes de

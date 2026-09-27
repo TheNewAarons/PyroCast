@@ -16,6 +16,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from features.grid.grid import WorkGrid
+
 CHANNEL_ORDER: tuple[str, ...] = (
     "elevation", "slope_deg", "aspect_deg",
     "wind_u", "wind_v", "temperature", "relative_humidity", "precipitation",
@@ -30,7 +32,7 @@ class EventChannels:
     dynamic: dict[str, dict[dt.date, np.ndarray]]
 
 
-def assemble_event_tensor(channels: EventChannels) -> xr.DataArray:
+def assemble_event_tensor(channels: EventChannels, grid: WorkGrid, event_id: int) -> xr.DataArray:
     n_days = len(channels.days)
     height, width = next(iter(channels.static.values())).shape
     data = np.empty((n_days, len(CHANNEL_ORDER), height, width), dtype="float32")
@@ -40,14 +42,29 @@ def assemble_event_tensor(channels: EventChannels) -> xr.DataArray:
         else:
             for d_idx, day in enumerate(channels.days):
                 data[d_idx, c_idx, :, :] = channels.dynamic[name][day]
+
+    # coords x/y (centros de píxel) + atributos de georreferencia -- sin
+    # esto, un Zarr guardado no tiene forma de recuperar a qué ubicación
+    # real corresponde cada píxel, ni de qué evento es (encontrado en la
+    # revisión final del 2026-09-27).
+    xs = grid.transform.c + grid.transform.a * (np.arange(width) + 0.5)
+    ys = grid.transform.f + grid.transform.e * (np.arange(height) + 0.5)
     return xr.DataArray(
         data,
         dims=("day", "channel", "y", "x"),
         coords={
             "day": [day.isoformat() for day in channels.days],
             "channel": list(CHANNEL_ORDER),
+            "y": ys,
+            "x": xs,
         },
         name="fire_event_tensor",
+        attrs={
+            "crs": grid.crs,
+            "transform": tuple(grid.transform)[:6],
+            "resolution_m": grid.resolution_m,
+            "event_id": event_id,
+        },
     )
 
 
