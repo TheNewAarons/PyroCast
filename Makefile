@@ -35,7 +35,11 @@ ingest-vegetation:
 	uv run --package ingestion pyrocast-ingest worldcover
 
 build-dataset:
-	@echo "pendiente: features/dataset aún no implementado"
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "uso: make build-dataset START=YYYY-MM-DD END=YYYY-MM-DD"; \
+		exit 1; \
+	fi
+	uv run --package features pyrocast-features build-dataset --start $(START) --end $(END)
 
 run-ca:
 	@echo "pendiente: models/cellular_automata aún no implementado"

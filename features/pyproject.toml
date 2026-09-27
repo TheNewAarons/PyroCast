@@ -19,6 +19,9 @@ dependencies = [
     "h5py>=3.11",
 ]
 
+[project.scripts]
+pyrocast-features = "features.cli:app"
+
 [tool.uv.sources]
 shared = { workspace = true }
 
