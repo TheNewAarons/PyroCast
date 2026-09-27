@@ -481,3 +481,86 @@ módulo.
 reproyectar detecciones WGS84 al CRS de la grilla). Ya estaba instalado
 de forma transitiva vía `rasterio`, pero depender de eso sin declararlo
 es frágil — se agrega como dependencia directa del paquete `features`.
+
+## `features/dataset/` no depende de `ingestion`
+
+`features/dataset/firms_loader.py` re-implementa un lector mínimo del
+parquet crudo de FIRMS (mismo formato que `ingestion/firms/storage.py`
+ya escribe) en vez de importar `ingestion.firms.storage` directamente.
+La dirección de dependencia establecida en este proyecto es `ingestion`
+→ `features` (excepción ya aceptada y documentada para
+`ingestion/dem/cli.py` y `ingestion/era5/cli.py`); invertirla para que
+`features` dependiera de `ingestion` habría sido la primera vez que esa
+regla se rompe en sentido contrario. Duplicar ~20 líneas de lectura de un
+formato de almacenamiento simple es un costo menor que esa inversión.
+
+## `pyrocast-features build-dataset` no re-ingiere P1-P4
+
+El enunciado pide un CLI que corra "todo el pipeline de features (P2-P6)
+de punta a punta" — se interpretó como el pipeline de FEATURES (terreno,
+clima, vegetación, grilla+eventos, ensamblado), no como re-disparar las
+descargas crudas de ingesta (DEM/ERA5-Land/Sentinel-2/WorldCover/FIRMS,
+que ya tienen sus propios comandos `pyrocast-ingest`). `build-dataset`
+asume que esos comandos ya corrieron para el rango de fechas pedido (más
+el padding previo al evento) y lee sus salidas ya procesadas por
+convención de nombre de archivo — documentado explícitamente como
+precondición operativa en `docs/dataset-card.md`, no una limitación
+oculta.
+
+## Corrección de nombre de archivo NDVI (`ingestion/sentinel2/cli.py`)
+
+Se encontró, al diseñar la búsqueda de "composite mensual más cercano"
+de NDVI, que `compute_and_save_vegetation` siempre escribe `ndvi.tif` —
+un segundo mes ingerido sobrescribía silenciosamente el NDVI del mes
+anterior, dejando como máximo UN mes disponible en disco en cualquier
+momento. Corregido en `ingestion/sentinel2/cli.py` (no en
+`features/vegetation/ndvi.py`, que no necesita saber qué mes calculó):
+el CLI renombra el resultado a `ndvi_YYYY-MM.tif` inmediatamente después
+de escribirlo. Encontrado y corregido durante la implementación de
+`features/dataset/`, no en una revisión final posterior.
+
+## `features/grid/` finalmente en uso real (`features/dataset/resample.py`)
+
+`features/grid/build_grid` ya existía pero ningún pipeline lo usaba
+todavía (ver la entrada anterior sobre su estado de adopción). En vez de
+migrar los cuatro pipelines de ingesta existentes a la grilla canónica
+del área de estudio completa, `features/dataset/` construye una `WorkGrid`
+POR EVENTO (bbox recortado a las detecciones + buffer, no el bbox de
+estudio completo) y resamplea la salida YA PROCESADA de cada fuente sobre
+esa grilla (`features/dataset/resample.py::resample_to_grid`) — logra la
+alineación píxel-a-píxel que el consumidor real necesita sin tocar los
+cuatro pipelines existentes. Migrar esos pipelines a compartir una única
+grilla de estudio completa (en vez de que cada evento tenga la suya) sigue
+diferido, y ahora es estrictamente una optimización/limpieza, no un
+bloqueante funcional.
+
+## `expose raw wind_u`/`wind_v` en `features/weather/derive.py`
+
+`compute_and_save_weather` guardaba solo velocidad/dirección de viento
+derivadas — el tensor de `features/dataset/` pide explícitamente los
+componentes u/v crudos, no derivados, así que se agregaron como dos
+claves nuevas del dict retornado (`wind_u`, `wind_v`), sin quitar
+`wind_speed`/`wind_direction` (ambas representaciones tienen consumidores
+distintos: el autómata celular probablemente querrá velocidad/dirección
+para el término de alineación de viento, el tensor de dataset quiere
+componentes crudos para no imponerle a un modelo de deep learning una
+descomposición polar innecesaria).
+
+## `event_id` estable derivado del contenido, no de la posición en la lista
+
+`features/fire_state/clustering.py::build_fire_events` originalmente
+asignaba `event_id` por `enumerate()` sobre los clusters ordenados —
+determinista dado un orden de entrada fijo, pero el orden de entrada real
+(detecciones leídas de un `glob()` de archivos parquet) no está
+garantizado entre corridas. Encontrado en la revisión final de
+`features/grid`+`fire_state` (2026-09-27): el mismo incendio físico podía
+recibir un `event_id` distinto en dos corridas con las mismas detecciones
+en distinto orden, lo cual invalida silenciosamente el split
+train/val/test guardado por id y el nombre del archivo Zarr de un evento
+ya persistido. Corregido: `event_id` es ahora un hash determinista del
+contenido del evento (fechas + coordenadas de sus detecciones, ordenadas
+antes de hashear) — estable sin importar el orden de entrada. Una
+colisión de hash entre dos eventos físicos distintos es posible en
+principio (espacio de 32 bits) pero, al volumen de detecciones de este
+proyecto, del mismo orden de riesgo que una colisión de hash corto de
+git; no se agregó detección de colisión.

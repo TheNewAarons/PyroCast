@@ -125,6 +125,22 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   resolución nominal de VIIRS (375 m, revisita diaria), no un ajuste
   contra el historial real de incendios de Chile — ese ajuste
   corresponde a `models/evaluation/` (backtesting), sin implementar.
+- **`features/dataset/`: un único DEM/estudio de área asumido**:
+  `resolve_event_sources` espera exactamente un archivo bajo
+  `data_processed_dir/dem/` (convención de nombre con hash de
+  bbox+resolución+CRS, un único estudio de área configurado a la vez) —
+  levanta un error claro si encuentra 0 o más de 1, pero no soporta
+  múltiples estudios de área simultáneos.
+- **`features/dataset/`: canales sin cobertura se rellenan con NaN, sin
+  error explícito**: si el rango de fechas ingerido con `pyrocast-ingest`
+  no cubre los días de padding previos a un evento (o el mes de NDVI más
+  cercano no existe en absoluto), el canal correspondiente queda en NaN
+  para esos días — un dataset con muchos NaN no falla ruidosamente, hay
+  que inspeccionarlo. Ver `docs/dataset-card.md`.
+- **`features/dataset/`: cada evento tiene su propia grilla, no la grilla
+  de estudio completa**: dos tensores de eventos distintos no son
+  comparables píxel a píxel sin un paso de reproyección adicional — ver
+  `docs/dataset-card.md`.
 
 ## Herramienta de investigación
 
