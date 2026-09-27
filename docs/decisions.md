@@ -409,3 +409,60 @@ combustible que caben en `uint8`; descarga de tiles sin streaming;
 `max_cloud_cover` no está en la clave de cache de Sentinel-2; fixture
 de integración NDVI original con solapamiento casi nulo (ya
 reemplazada en el fix pass por fixtures más grandes).
+
+## `features/grid/`: snapping determinista en vez de bounds reproyectados exactos
+
+`build_grid` reproyecta el bbox de estudio (WGS84) al CRS de destino y
+"snapea" el resultado hacia afuera al múltiplo de la resolución más
+cercano (`floor` para el borde oeste/sur, `ceil` para el este/norte) en
+vez de usar los bounds reproyectados exactos. Esto es lo que garantiza
+que "misma configuración → mismos límites de grilla, mismo número de
+celdas" sea trivialmente cierto (ancho/alto son siempre un entero exacto,
+nunca dependen de redondeos acumulados de una transformación de GDAL) —
+el costo es que la grilla resultante cubre un área ligeramente mayor que
+el bbox pedido (hasta una celda de más por lado), nunca menor.
+
+**Estado de adopción, explícito**: los cuatro módulos de ingesta ya
+implementados (DEM, ERA5-Land, Sentinel-2, WorldCover) NO usan todavía
+esta grilla — cada uno sigue reproyectando de forma independiente a
+partir de los bounds de su propio mosaico (`calculate_default_transform`
+sobre el raster ya descargado), como ya documentaba la sección "Cierre de
+Etapa 1" más arriba. `features/grid/` hace que la grilla canónica exista
+y sea correcta; migrar los pipelines existentes queda para
+`features/dataset/` (ver más abajo — implementado a continuación de este
+módulo), que es el consumidor que en la práctica necesita alineación
+píxel-a-píxel entre todas las capas.
+
+## `features/fire_state/`: union-find propio en vez de `scikit-learn` (DBSCAN)
+
+El enunciado permite "DBSCAN u otro método simple". Se implementó un
+union-find de ~30 líneas sobre una relación de vecindad
+espacial+temporal, en vez de agregar `scikit-learn` como dependencia
+nueva de `features` — `scikit-learn` ya es parte del stack del proyecto
+(`models/evaluation`, calibración isotónica, según CLAUDE.md) pero no es
+hoy una dependencia de `features`, y el volumen de detecciones de este
+proyecto (algunos miles por temporada en el área de estudio) hace que un
+O(n²) directo sea más que suficiente — no vale la pena la dependencia
+pesada por un algoritmo tan chico. Si el volumen de detecciones creciera
+significativamente (p. ej. multi-país, multi-temporada), esto debería
+revisarse.
+
+## `features/fire_state/`: sin CLI/Makefile propio (se conecta desde `features/dataset/`)
+
+A diferencia de FIRMS/DEM/ERA5-Land/Sentinel-2/WorldCover, este módulo no
+tiene comando de CLI ni target de Makefile propio. `features/terrain` y
+`features/weather` tampoco lo tienen — se invocan como un paso de cómputo
+desde dentro de `ingestion/dem/cli.py`/`ingestion/era5/cli.py`,
+inmediatamente después de la propia descarga de esa fuente.
+`features/fire_state` no tenía un punto de enganche equivalente en el
+momento de implementarse: el clustering necesita el HISTORIAL acumulado
+de detecciones, no la respuesta de una sola descarga — quedó conectado a
+`pyrocast-features build-dataset` en cuanto ese módulo existió (ver más
+abajo), no antes.
+
+## `pyproj` declarado explícitamente en `features/pyproject.toml`
+
+`features/fire_state/rasterize.py` importa `pyproj` directamente (para
+reproyectar detecciones WGS84 al CRS de la grilla). Ya estaba instalado
+de forma transitiva vía `rasterio`, pero depender de eso sin declararlo
+es frágil — se agrega como dependencia directa del paquete `features`.

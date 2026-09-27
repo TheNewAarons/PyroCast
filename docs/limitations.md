@@ -87,6 +87,23 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   urbano-forestal (WUI), que es precisamente el escenario detrás de las
   muertes y viviendas destruidas que motivan este proyecto (ver
   CLAUDE.md). Encontrado en la revisión final del 2026-09-26.
+- **Reconstrucción de eventos de incendio: buffer + interpolación lineal,
+  no kriging**: `features/fire_state/` reconstruye la superficie quemada
+  diaria de un evento con un buffer espacial fijo alrededor de cada
+  detección FIRMS más interpolación temporal lineal (equivalente a unión
+  de máscaras) entre días con detección — WildfireCube (paper de
+  referencia) usa kriging espaciotemporal, que estima incertidumbre
+  espacial y produce una reconstrucción más plausible físicamente. Un
+  incendio que se apaga y se reactiva en otro punto dentro de la misma
+  ventana `temporal_eps` (2 días por defecto) se rellena como si hubiera
+  seguido ardiendo en ambos lugares durante el hueco, sobreestimando la
+  superficie quemada en ese caso. Ver `docs/fire-events.md`.
+- **Parámetros de clustering de eventos sin calibrar contra incendios
+  reales**: `spatial_eps_m=750m` y `temporal_eps=2 días`
+  (`features/fire_state/clustering.py`) son heurísticas basadas en la
+  resolución nominal de VIIRS (375 m, revisita diaria), no un ajuste
+  contra el historial real de incendios de Chile — ese ajuste
+  corresponde a `models/evaluation/` (backtesting), sin implementar.
 
 ## Herramienta de investigación
 
