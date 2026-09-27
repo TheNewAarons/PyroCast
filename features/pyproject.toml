@@ -9,6 +9,7 @@ dependencies = [
     "rioxarray>=0.17",
     "geopandas>=1.0",
     "shapely>=2.0",
+    "pyproj>=3.6",
     "zarr>=2.18",
     "numpy>=2.0",
     "h5netcdf>=1.3",
