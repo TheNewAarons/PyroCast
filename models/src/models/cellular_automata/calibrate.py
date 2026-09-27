@@ -19,6 +19,8 @@ from models.cellular_automata.rules import SpreadParameters
 from models.cellular_automata.simulate import simulate_fire_spread
 from models.evaluation.metrics import brier_score, iou_score
 
+_VALID_PARAM_GRID_KEYS = frozenset({"base_spread_prob", "slope_coefficient", "wind_coefficient"})
+
 
 @dataclass(frozen=True)
 class TrainingSample:
@@ -49,11 +51,17 @@ def _build_params(combo: dict[str, float]) -> SpreadParameters:
 def _score_sample(
     sample: TrainingSample, params: SpreadParameters, metric: str, seed: int
 ) -> float:
-    n_days = 1  # el grid search compara contra el estado final observado,
-    # no contra una trayectoria diaria completa -- simplificación
-    # deliberada (ver docs/limitations.md); usar el mínimo necesario
-    # (1 día) sería incorrecto si el evento real abarca más días, así
-    # que se re-deriva desde el propio estado observado en su lugar.
+    # n_days=1 SIEMPRE, literal -- NO se re-deriva nada del sample. Esto
+    # solo tiene sentido si `observed_final_mask` es alcanzable en un
+    # único paso simulado desde `initial_burning` (cierto para los
+    # samples sintéticos de este módulo, construidos así a propósito).
+    # Un evento real multi-día de features/fire_state necesitaría correr
+    # la trayectoria completa y comparar el ÚLTIMO día -- ver
+    # docs/limitations.md. Consecuencia directa: `seed` no tiene ningún
+    # efecto aquí (con n_days=1, el único array de probabilidad devuelto
+    # se calcula ANTES del primer sorteo aleatorio) -- documentado, no
+    # un descuido.
+    n_days = 1
     probabilities = simulate_fire_spread(
         sample.initial_burning, sample.elevation, sample.wind_u, sample.wind_v,
         sample.fuel_type, sample.resolution_m, n_days=n_days, params=params, seed=seed,
@@ -73,6 +81,18 @@ def grid_search_calibrate(
     metric: str = "iou",
     seed: int = 42,
 ) -> tuple[SpreadParameters, float]:
+    unknown_keys = set(param_grid) - _VALID_PARAM_GRID_KEYS
+    if unknown_keys:
+        # Sin esto, una clave mal escrita (p. ej. "base_sprad_prob") se
+        # ignoraba en silencio -- _build_params solo lee las tres claves
+        # válidas con .get(), así que un typo hacía que TODA la búsqueda
+        # evaluara los parámetros por DEFECTO N veces, devolviendo un
+        # resultado que parece exitoso pero no calibró nada. Encontrado
+        # en la revisión final del 2026-09-27.
+        raise ValueError(
+            f"param_grid tiene claves desconocidas: {sorted(unknown_keys)} -- "
+            f"válidas: {sorted(_VALID_PARAM_GRID_KEYS)}"
+        )
     keys = list(param_grid)
     best_params: SpreadParameters | None = None
     best_score = -math.inf

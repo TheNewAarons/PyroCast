@@ -180,11 +180,48 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   `initial_burning` — válido para eventos de un paso, pero requeriría
   ajustarse (ejecutar la trayectoria completa de varios días) para
   calibrar contra un evento real de `features/dataset/` que abarca
-  varios días.
+  varios días. Consecuencia directa verificada en la revisión final del
+  2026-09-27: `seed` no tiene ningún efecto en `_score_sample` (con
+  `n_days=1`, el único array de probabilidad se calcula antes del primer
+  sorteo aleatorio).
+- **`calibrate.py` con métrica IoU y un `TrainingSample` de un solo
+  paso NO recupera el valor exacto de `base_spread_prob`**: cuando cada
+  celda del anillo de ignición tiene exactamente un vecino en llamas,
+  `P(ignición)=base_spread_prob` para todas ellas, y el IoU umbralizado
+  en `>=0.5` da el MISMO score para cualquier candidato `>=0.5` sin
+  importar cuán cerca esté del valor verdadero — el grid search solo
+  distingue de qué lado del umbral 0.5 cae cada candidato, no recupera
+  el valor real. Verificado: con candidatos `[0.5, 0.9]` y un valor
+  verdadero de 0.9, el grid search elige **0.5** (el primero con el
+  mismo score), no 0.9. Encontrado en la revisión final del 2026-09-27 —
+  ver `models/tests/test_cellular_automata_calibrate.py` para el test
+  que documenta este comportamiento explícitamente.
 - **8 direcciones (vecindad de Moore), no propagación continua**: la
   distancia diagonal se calcula correctamente (`resolución_m·√2`), pero
   la resolución angular de la propagación está limitada a 8 direcciones
   discretas por celda — un frente de fuego real no está limitado así.
+- **Autómata celular: `np.clip(p_dir, 0.0, 1.0)` satura a spread CIERTO
+  en condiciones reales de incendios chilenos, no solo en casos extremos
+  de laboratorio**: con los parámetros por defecto a 250 m de
+  resolución, `p_dir` supera 1.0 (spread determinista, no
+  probabilístico) por encima de ~22° de pendiente o ~8 m/s (30 km/h) de
+  viento alineado con la propagación — velocidades de viento comunes en
+  episodios de viento Puelche que impulsan los megaincendios de
+  Biobío/Ñuble/Araucanía. Ninguno de los tests actuales ejercita este
+  régimen (usan pendientes/vientos moderados que se quedan dentro del
+  rango no saturado). Encontrado en la revisión final del 2026-09-27 —
+  ver `docs/cellular-automata.md` para la tabla de valores exactos.
+- **`simulate_fire_spread` rechaza `elevation`/`wind_u`/`wind_v` no
+  finitos (NaN/inf) con un error explícito** — necesario porque
+  `features/dataset/resample.py` rellena huecos de cobertura con NaN
+  (nunca fabrica un valor), y esos son precisamente los arrays que
+  alimentarían este simulador en una integración futura con eventos
+  reales. Antes de este fix (revisión final del 2026-09-27), un solo
+  NaN de elevación se propagaba en silencio y reducía una simulación de
+  55 celdas encendidas a 1, sin ningún aviso. `models/cellular_automata/`
+  todavía no está conectado a `features/dataset/` -- este riesgo no se
+  ha materializado en producción, pero queda cerrado antes de esa
+  integración en vez de esperar a que alguien lo redescubra.
 
 ## Herramienta de investigación
 

@@ -725,3 +725,52 @@ observada del último día. Documentado como limitación conocida en
 `docs/limitations.md` — no se rediseñó dentro de este plan porque no
 hay todavía datos de entrenamiento reales (de `features/dataset/`) que
 forzaran la forma correcta de `TrainingSample` para el caso multi-día.
+
+## Revisión final de `models/cellular_automata/`: hallazgos y correcciones (2026-09-27)
+
+0 hallazgos Críticos (el pre-verificado exhaustivo de la fórmula/geometría
+antes de escribir el plan se sostuvo: las 8 cifras exactas verificadas a
+mano reprodujeron byte a byte contra el código final). 5 Importantes,
+todos corregidos:
+
+- `_build_params` ignoraba en silencio cualquier clave de `param_grid`
+  no reconocida (`.get(key, default)`) — un typo en el nombre de un
+  parámetro evaluaba los defaults N veces sin avisar, devolviendo un
+  resultado que parece una calibración exitosa. Corregido: validación
+  explícita de claves con `ValueError` nombrando las desconocidas.
+- Dos tests se llamaban "...recovers_the_true_base_spread_prob..." pero
+  el grid search con IoU y un `TrainingSample` de un solo paso NO
+  recupera el valor verdadero — solo distingue de qué lado del umbral
+  0.5 cae cada candidato (verificado: candidatos `[0.5, 0.9]` con
+  verdad=0.9 elige 0.5). Renombrados para describir lo que realmente
+  prueban, con un test nuevo que documenta explícitamente la
+  función-escalón del IoU en este caso.
+- Un comentario en `_score_sample` afirmaba que `n_days=1` "se
+  re-derivaba desde el propio estado observado" — falso, es un literal
+  fijo. Corregido el comentario para describir el comportamiento real
+  (incluida la consecuencia de que `seed` no tiene ningún efecto con
+  `n_days=1`).
+- `simulate_fire_spread` no validaba `elevation`/`wind_u`/`wind_v` —
+  un NaN (el mismo patrón que `features/dataset/resample.py` produce
+  para huecos de cobertura) se propagaba en silencio y apagaba la
+  simulación sin aviso. Corregido: `ValueError` explícito al detectar
+  valores no finitos, antes de que se propaguen.
+- `np.clip(p_dir, 0.0, 1.0)` satura a spread cierto por encima de ~22°
+  de pendiente o ~8 m/s de viento alineado — condiciones reales de
+  incendios chilenos (viento Puelche), no solo casos extremos. Ningún
+  test ejercitaba ese régimen. Documentado con la tabla de valores
+  exactos en `docs/cellular-automata.md` y `docs/limitations.md` — no
+  se cambió el comportamiento (recortar a 1.0 sigue siendo la decisión
+  correcta para mantener `p_dir` como una probabilidad válida), solo se
+  hizo explícito que el modelo deja de ser probabilístico ahí.
+
+**Minor deferidos (no corregidos):** `models/cellular_automata/__init__.py`
+sigue con el docstring "Pendiente de implementación" (desactualizado,
+cosmético); el test de "más vecinos en llamas" no fija el valor exacto
+`1-(1-p)^4`, solo la desigualdad; `grid_search_calibrate([], grid)` da
+`ZeroDivisionError` sin mensaje; arrays de viento 3D más cortos que
+`n_days` dan `IndexError` sin nombrar la causa; `SpreadParameters` no es
+hasheable pese a `frozen=True` (por el campo `dict`); `run-ca --size 0`
+da un traceback de Typer sin validar; `docs/cellular-automata.md` no
+lleva el aviso de "herramienta de investigación" (consistente con
+`fire-events.md`/`dataset-card.md`, no una regresión nueva).

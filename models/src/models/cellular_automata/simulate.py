@@ -24,6 +24,24 @@ from models.cellular_automata.rules import (
 _DEFAULT_PARAMS = SpreadParameters()
 
 
+def _require_finite(name: str, array: np.ndarray) -> None:
+    # features/dataset/resample.py rellena huecos de cobertura con NaN
+    # (nunca fabrica un valor -- ver docs/dataset-card.md) -- si ese NaN
+    # (o un inf) llega hasta acá sin detectarse, se propaga en silencio
+    # a través de exp()/comparaciones y apaga la simulación sin ningún
+    # aviso (verificado en la revisión final del 2026-09-27: una sola
+    # celda NaN de elevación redujo una simulación de 55 celdas
+    # encendidas a 1). Fallar ruidosamente aquí en vez de dejar que el
+    # NaN se propague silenciosamente hasta el resultado.
+    if not np.all(np.isfinite(array)):
+        bad = int(np.sum(~np.isfinite(array)))
+        raise ValueError(
+            f"{name} tiene {bad} celda(s) no finita(s) (NaN/inf) -- "
+            f"simulate_fire_spread no puede continuar con datos de entrada "
+            f"incompletos. Ver docs/limitations.md."
+        )
+
+
 def simulate_fire_spread(
     initial_burning: np.ndarray,
     elevation: np.ndarray,
@@ -35,6 +53,9 @@ def simulate_fire_spread(
     params: SpreadParameters = _DEFAULT_PARAMS,
     seed: int = 42,
 ) -> np.ndarray:
+    _require_finite("elevation", elevation)
+    _require_finite("wind_u", wind_u)
+    _require_finite("wind_v", wind_v)
     rng = np.random.default_rng(seed)
     flammability = flammability_grid(fuel_type, params.fuel_flammability)
     burning = initial_burning.astype(bool).copy()

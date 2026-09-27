@@ -6,6 +6,7 @@ docs/superpowers/plans/2026-09-27-models-cellular-automata.md)."""
 import time
 
 import numpy as np
+import pytest
 from models.cellular_automata.rules import SpreadParameters
 from models.cellular_automata.simulate import simulate_fire_spread
 
@@ -110,6 +111,38 @@ def test_already_burning_cells_report_probability_one():
     )
     assert probabilities[0, _CENTER, _CENTER] == 1.0
     assert probabilities[-1, _CENTER, _CENTER] == 1.0  # nunca se "apaga"
+
+
+def test_rejects_non_finite_elevation_with_a_clear_error_instead_of_silent_nan():
+    # features/dataset/resample.py rellena huecos de cobertura con NaN
+    # (nunca fabrica un valor) -- si ese NaN llega hasta acá sin
+    # detectarse, se propaga en silencio a través de exp()/comparaciones
+    # y produce una simulación mayormente apagada sin ningún aviso.
+    # Encontrado en la revisión final del 2026-09-27: una sola celda NaN
+    # de elevación redujo una simulación de 55 celdas encendidas a 1.
+    elevation = np.zeros((_SIZE, _SIZE))
+    elevation[_CENTER, _CENTER] = np.nan
+    wind_u = np.zeros((_SIZE, _SIZE))
+    wind_v = np.zeros((_SIZE, _SIZE))
+    fuel_type = np.ones((_SIZE, _SIZE), dtype=int)
+    with pytest.raises(ValueError, match="elevation"):
+        simulate_fire_spread(
+            _single_ignition(), elevation, wind_u, wind_v, fuel_type,
+            resolution_m=100.0, n_days=5, seed=1,
+        )
+
+
+def test_rejects_non_finite_wind_with_a_clear_error_instead_of_silent_nan():
+    elevation = np.zeros((_SIZE, _SIZE))
+    wind_u = np.zeros((_SIZE, _SIZE))
+    wind_u[_CENTER, _CENTER] = np.inf
+    wind_v = np.zeros((_SIZE, _SIZE))
+    fuel_type = np.ones((_SIZE, _SIZE), dtype=int)
+    with pytest.raises(ValueError, match="wind_u"):
+        simulate_fire_spread(
+            _single_ignition(), elevation, wind_u, wind_v, fuel_type,
+            resolution_m=100.0, n_days=5, seed=1,
+        )
 
 
 def test_scales_to_a_realistic_event_grid_size_in_a_few_seconds():

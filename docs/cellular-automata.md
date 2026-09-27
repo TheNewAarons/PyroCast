@@ -10,7 +10,10 @@ a favor del viento.
 
 ## La fórmula
 
-Para cada celda no encendida, la probabilidad de que se encienda en el
+`compute_ignition_probability` devuelve un valor para TODA celda de la
+grilla (encendida o no) — es `simulate_fire_spread` quien sobrescribe
+las celdas ya en llamas con `P=1.0` (ver más abajo). Conceptualmente,
+para cada celda no encendida, la probabilidad de que se encienda en el
 paso (día) siguiente es:
 
 ```
@@ -150,6 +153,31 @@ contra la máscara observada; devuelve la combinación con mejor score
 promedio. Solo calibra los tres parámetros ESCALARES —
 `fuel_flammability` es un dict, no un escalar, y calibrarlo por grid
 search sería combinatoriamente mucho más caro; queda como trabajo futuro.
+
+## Saturación por recorte (`np.clip(p_dir, 0.0, 1.0)`)
+
+Con los parámetros por defecto, a la resolución de trabajo del proyecto
+(250 m, `shared/config.py`), `p_dir` supera 1.0 (spread CIERTO, no
+probabilístico) en condiciones que ocurren en incendios chilenos reales
+de verano, no solo en casos extremos de laboratorio:
+
+| Condición | `p_dir` sin recortar | Resultado |
+|---|---|---|
+| pendiente 75 m/celda (16.7°) | 0.996 | al borde |
+| pendiente 100 m/celda (21.8°) | 1.486 | **recortado a 1.0** |
+| pendiente 150 m/celda (31°) | 3.307 | **recortado a 1.0** |
+| viento alineado 5 m/s | 0.815 | al borde |
+| viento alineado 8 m/s | 1.486 | **recortado a 1.0** |
+| viento alineado 10 m/s | 2.217 | **recortado a 1.0** |
+| viento alineado 20 m/s | 16.379 | **recortado a 1.0** |
+
+Es decir: por encima de ~22° de pendiente o ~8 m/s de viento alineado
+(30 km/h — común en episodios de viento Puelche que impulsan los
+megaincendios de Biobío/Ñuble/Araucanía), el modelo deja de ser
+probabilístico y afirma propagación CIERTA hacia esa celda. Ver
+`docs/limitations.md` — el mandato de honestidad de CLAUDE.md exige que
+esto se documente explícitamente, no que quede implícito en un
+`np.clip`.
 
 ## Caso analítico verificado: propagación circular
 
