@@ -42,7 +42,7 @@ build-dataset:
 	uv run --package features pyrocast-features build-dataset --start $(START) --end $(END)
 
 run-ca:
-	@echo "pendiente: models/cellular_automata aún no implementado"
+	uv run --package models pyrocast-models run-ca
 
 train:
 	@echo "pendiente: models/deep aún no implementado"

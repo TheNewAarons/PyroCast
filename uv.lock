@@ -791,6 +791,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "shared" },
     { name = "torch" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -799,6 +800,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "shared", editable = "shared" },
     { name = "torch", specifier = ">=2.4" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [[package]]
