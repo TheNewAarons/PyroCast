@@ -12,9 +12,10 @@ en general no caen en un múltiplo exacto de la resolución).
 Estado actual (ver docs/decisions.md): los módulos de ingesta existentes
 (DEM, ERA5-Land, Sentinel-2, WorldCover) todavía reproyectan cada uno de
 forma independiente a partir de los bounds de su propio mosaico, NO desde
-esta grilla — migrarlos queda para `features/dataset/` (sin implementar).
-Este módulo hace que la grilla canónica exista y sea correcta; no fuerza
-todavía su uso en los pipelines existentes.
+esta grilla. `features/dataset/` (que sí usa esta grilla, una por evento
+— ver `docs/dataset-card.md`) resamplea la SALIDA ya procesada de esos
+cuatro pipelines en vez de migrarlos; este módulo hace que la grilla
+canónica exista y sea correcta, no fuerza su uso en esos pipelines.
 """
 import math
 from dataclasses import dataclass

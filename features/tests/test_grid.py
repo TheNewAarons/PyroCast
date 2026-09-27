@@ -4,6 +4,7 @@ import math
 import numpy as np
 import xarray as xr
 from features.grid.grid import build_grid, build_grid_from_settings, grid_template
+from rasterio.warp import transform_bounds
 
 BBOX = (-73.7, -39.3, -71.0, -36.5)  # west, south, east, north (WGS84)
 CRS = "EPSG:32719"
@@ -25,16 +26,50 @@ def test_build_grid_produces_whole_pixel_extent():
     assert (north - south) % RESOLUTION_M == 0.0
 
 
-def test_build_grid_exact_multiple_bbox_adds_no_spurious_padding():
-    # Un bbox cuyo extent reproyectado ya cae en un múltiplo exacto de la
-    # resolución no debe ganar una fila/columna extra por floor/ceil.
+def test_build_grid_matches_hand_computed_bounds_for_the_real_study_area():
+    # Valor concreto, calculado a mano (floor/ceil sobre
+    # transform_bounds("EPSG:4326","EPSG:32719", *BBOX) =
+    # (78951.22, 5639387.91, 327543.20, 5958731.91), independientemente
+    # verificado en la revisión final de este módulo) -- pin exacto, no
+    # solo una propiedad general. Un mutante que usara floor() en vez de
+    # ceil() para el borde superior (o viceversa), o que agregara
+    # padding espurio, cambiaría estos números.
+    grid = build_grid(BBOX, CRS, RESOLUTION_M)
+    assert grid.bounds == (78750.0, 5639250.0, 327750.0, 5958750.0)
+    assert grid.width == 996
+    assert grid.height == 1278
+
+
+def test_build_grid_bounds_always_contain_the_requested_bbox():
+    # La invariante que realmente importa: la grilla NUNCA debe recortar
+    # el bbox pedido (solo puede sobre-cubrir, nunca sub-cubrir) -- un
+    # mutante que usara floor() en los cuatro bordes (en vez de floor
+    # oeste/sur + ceil este/norte) violaría esto en el borde este/norte.
+    grid = build_grid(BBOX, CRS, RESOLUTION_M)
+    west, south, east, north = grid.bounds
+    req_west, req_south, req_east, req_north = transform_bounds("EPSG:4326", CRS, *BBOX)
+    assert west <= req_west
+    assert south <= req_south
+    assert east >= req_east
+    assert north >= req_north
+
+
+def test_build_grid_south_and_north_already_exact_multiples_get_no_extra_padding():
+    # bbox construido (a partir de un rectángulo UTM cuyo sur/norte SON
+    # múltiplos exactos de 1000, ida y vuelta a WGS84) para que
+    # transform_bounds reproduzca sur=5700000.0 y norte=5800000.0 EXACTOS
+    # -- verificado por separado antes de escribir este test (ver
+    # docs/superpowers/plans/2026-09-27-features-grid-fire-state.md). El
+    # test anterior con este nombre no probaba en realidad un caso de
+    # múltiplo exacto (su bbox reproyectaba a valores no-múltiplos); este
+    # sí, y confirma que floor/ceil sobre un valor YA entero no le suma
+    # una fila/columna de más.
+    bbox = (-72.4542643735273, -38.79772154662968, -71.27552823619688, -37.92558174988909)
     resolution_m = 1000.0
-    grid_a = build_grid((-72.0, -38.0, -71.0, -37.0), CRS, resolution_m)
-    grid_b = build_grid((-72.0, -38.0, -71.0, -37.0), CRS, resolution_m)
-    assert grid_a == grid_b
-    west, south, east, north = grid_a.bounds
-    assert (east - west) % resolution_m == 0.0
-    assert (north - south) % resolution_m == 0.0
+    grid = build_grid(bbox, "EPSG:32719", resolution_m)
+    west, south, east, north = grid.bounds
+    assert south == 5700000.0
+    assert north == 5800000.0
 
 
 def test_build_grid_from_settings_matches_build_grid(monkeypatch):

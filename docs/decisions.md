@@ -293,16 +293,17 @@ WorldCover):
 | ERA5-Land | EPSG:32719 | 250 m | Bilineal | Viento/temperatura/humedad/precipitación son continuos. |
 | Sentinel-2 (NDVI) | EPSG:32719 | 250 m | Bilineal | NDVI es una magnitud continua derivada de reflectancia. |
 | ESA WorldCover | EPSG:32719 | 250 m | **Nearest** | Códigos de clase categóricos — interpolar fabricaría clases inexistentes. |
-| NASA FIRMS | (sin reproyectar) | — | — | Puntos de detección en WGS84; la reproyección a grilla es tarea de `features/fire_state/` (pendiente). |
+| NASA FIRMS | (sin reproyectar) | — | — | Puntos de detección en WGS84; `features/fire_state/` los clusteriza en eventos y rasteriza cada uno sobre su propia grilla (por evento, no la de estudio completo — ver `docs/fire-events.md`). |
 
 Decisión transversal: **todas** las fuentes rasterizadas comparten el
 mismo CRS de destino (`EPSG:32719`, UTM 19S) y la misma resolución
 nominal (250 m, configurable en `shared/config.py`), pero **cada una
 reproyecta de forma independiente** — no hay todavía una grilla
 canónica compartida que garantice alineación píxel-a-píxel exacta
-entre capas (mismo origen, mismo ancho/alto). Esto es una limitación
-conocida y diferida a `features/grid/` (todavía sin implementar, ver
-`docs/limitations.md`): hasta que exista, dos capas de este proyecto
+entre capas (mismo origen, mismo ancho/alto). `features/grid/` ya define
+esa grilla canónica de forma determinista, pero estos cuatro pipelines de
+ingesta todavía no reproyectan contra ella (ver `docs/limitations.md`):
+hasta que lo hagan, dos capas de este proyecto
 con el mismo CRS/resolución nominal pueden tener orígenes de píxel
 ligeramente distintos, y superponerlas exactamente requiere un
 remuestreo adicional de alineación en el consumidor (p. ej.
@@ -428,10 +429,22 @@ esta grilla — cada uno sigue reproyectando de forma independiente a
 partir de los bounds de su propio mosaico (`calculate_default_transform`
 sobre el raster ya descargado), como ya documentaba la sección "Cierre de
 Etapa 1" más arriba. `features/grid/` hace que la grilla canónica exista
-y sea correcta; migrar los pipelines existentes queda para
-`features/dataset/` (ver más abajo — implementado a continuación de este
-módulo), que es el consumidor que en la práctica necesita alineación
-píxel-a-píxel entre todas las capas.
+y sea correcta; migrar esos cuatro pipelines a compartir esta grilla
+sigue sin hacerse.
+
+**Corrección (revisión final, 2026-09-27)**: la primera versión de esta
+nota afirmaba, en tiempo pasado, que `features/dataset/` "se implementó a
+continuación de este módulo" y que `features/fire_state` "quedó conectado
+a `pyrocast-features build-dataset` en cuanto ese módulo existió" —
+ambas afirmaciones eran falsas en el momento en que se escribieron
+(`features/dataset/__init__.py` decía literalmente "Pendiente de
+implementación", no existía ningún `pyrocast-features`, y `make
+build-dataset` seguía siendo un stub). Eran una intención declarada como
+hecho consumado, no una descripción de lo que existía. `features/dataset/`
+sí se implementó, pero en una solicitud posterior y separada del usuario
+dentro de esta misma sesión, no como parte de este módulo — ver el
+commit que agrega `features/dataset/` y `pyrocast-features` para el
+estado real.
 
 ## `features/fire_state/`: union-find propio en vez de `scikit-learn` (DBSCAN)
 
@@ -456,9 +469,11 @@ desde dentro de `ingestion/dem/cli.py`/`ingestion/era5/cli.py`,
 inmediatamente después de la propia descarga de esa fuente.
 `features/fire_state` no tenía un punto de enganche equivalente en el
 momento de implementarse: el clustering necesita el HISTORIAL acumulado
-de detecciones, no la respuesta de una sola descarga — quedó conectado a
-`pyrocast-features build-dataset` en cuanto ese módulo existió (ver más
-abajo), no antes.
+de detecciones, no la respuesta de una sola descarga. Quedó sin CLI
+propio hasta que `features/dataset/` (solicitud separada y posterior
+dentro de esta misma sesión) agregó `pyrocast-features build-dataset`,
+que sí lo invoca — ver `docs/dataset-card.md` y el commit que agrega ese
+módulo.
 
 ## `pyproj` declarado explícitamente en `features/pyproject.toml`
 

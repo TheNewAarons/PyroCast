@@ -4,6 +4,7 @@ detección dentro del rango del evento."""
 import datetime as dt
 
 import numpy as np
+import pytest
 from features.fire_state.clustering import FireEvent
 from features.fire_state.rasterize import (
     build_fire_state,
@@ -14,13 +15,17 @@ from features.grid.grid import WorkGrid
 from rasterio.transform import from_origin
 from shared.schemas import FireDetection
 
-# Grilla de 20x20 @ 250 m en EPSG:32719, con origen elegido a mano para
-# que el punto (lat=-38.0, lon=-72.5) caiga en el píxel (10, 10) --
-# verificado independientemente con pyproj antes de escribir el test
-# (ver docs/superpowers/plans/2026-09-27-features-grid-fire-state.md).
+# Grilla de 15x25 (alto x ancho, deliberadamente NO cuadrada -- un bug de
+# transposición alto/ancho en el código bajo prueba produciría un array de
+# forma equivocada, detectado por la propia aserción de shape más abajo;
+# en una grilla cuadrada ese mismo bug pasaría desapercibido) @ 250 m en
+# EPSG:32719, con origen elegido a mano para que el punto (lat=-38.0,
+# lon=-72.5) caiga en el píxel (10, 10) -- verificado independientemente
+# con pyproj antes de escribir el test (ver
+# docs/superpowers/plans/2026-09-27-features-grid-fire-state.md).
 _GRID = WorkGrid(
     crs="EPSG:32719", transform=from_origin(190000, 5791000, 250, 250),
-    width=20, height=20, resolution_m=250.0,
+    width=25, height=15, resolution_m=250.0,
 )
 
 
@@ -37,14 +42,28 @@ def test_rasterize_daily_masks_known_coordinate_lands_on_expected_pixel():
     masks = rasterize_daily_masks(event, _GRID, buffer_m=300.0)
     assert list(masks.keys()) == [at.date()]
     mask = masks[at.date()]
-    assert mask.shape == (20, 20)
+    assert mask.shape == (15, 25)
     assert mask.dtype == np.bool_
     assert mask[10, 10]  # centro esperado -- verificado independientemente
     assert not mask[0, 0]  # esquina, a >3000 m del punto -- fuera del buffer
+    assert not mask[14, 24]  # esquina opuesta, también fuera del buffer
+
+
+def test_rasterize_daily_masks_raises_when_a_detected_day_ends_up_with_no_marked_cell():
+    # buffer_m=1.0 (mucho menor que medio píxel, 125 m) no marca NINGÚN
+    # píxel -- antes de este fix, ese día simplemente quedaba con una
+    # máscara toda-False, indistinguible de "no hubo fuego real" (el mismo
+    # patrón de "nodata fabricado/silencioso" ya encontrado varias veces
+    # en este repo). Un día CON detección real que termina sin ningún
+    # píxel marcado debe fallar ruidosamente, no silenciosamente.
+    at = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+    event = FireEvent(event_id=0, detections=(_det(-38.0, -72.5, at),))
+    with pytest.raises(ValueError, match="ningún píxel"):
+        rasterize_daily_masks(event, _GRID, buffer_m=1.0)
 
 
 def test_fill_temporal_gaps_interpolates_as_union_of_neighboring_anchors():
-    shape = (20, 20)
+    shape = (15, 25)
     day1 = dt.date(2026, 1, 1)
     day2 = dt.date(2026, 1, 2)  # día sin detección propia -- se rellena
     day3 = dt.date(2026, 1, 3)
@@ -69,6 +88,32 @@ def test_fill_temporal_gaps_interpolates_as_union_of_neighboring_anchors():
     assert filled[day2][5, 5]
     assert filled[day2][8, 8]
     assert not filled[day2][0, 0]
+
+
+def test_fill_temporal_gaps_uses_strict_greater_than_zero_not_a_majority_threshold():
+    # Con un hueco de UN solo día (peso exactamente 0.5), un umbral ">0.0"
+    # (unión) y uno ">=0.5" (mayoría) dan el MISMO resultado -- no
+    # discriminan entre implementaciones. Con un hueco de 3 días, el peso
+    # del primer día de hueco es 1/3 (~0.333): ">0.0" lo marca True
+    # (unión: el píxel SÍ arde en la ancla siguiente), ">=0.5" lo marcaría
+    # False -- esto sí distingue la implementación correcta de una que
+    # umbralizara por "mayoría" en vez de por unión.
+    shape = (15, 25)
+    day1 = dt.date(2026, 1, 1)
+    day2 = dt.date(2026, 1, 2)  # hueco, peso 1/3
+    day3 = dt.date(2026, 1, 3)  # hueco, peso 2/3
+    day4 = dt.date(2026, 1, 4)
+
+    mask_day1 = np.zeros(shape, dtype=bool)  # pixel (12,20) apagado en la ancla anterior
+    mask_day4 = np.zeros(shape, dtype=bool)
+    mask_day4[12, 20] = True  # pixel (12,20) encendido en la ancla siguiente
+
+    filled = fill_temporal_gaps({day1: mask_day1, day4: mask_day4}, day1, day4)
+
+    assert not filled[day1][12, 20]
+    assert filled[day2][12, 20]  # peso 1/3 -- solo ">0.0" (unión) lo marca True
+    assert filled[day3][12, 20]  # peso 2/3
+    assert filled[day4][12, 20]
 
 
 def test_fill_temporal_gaps_never_extrapolates_past_a_single_sided_anchor():

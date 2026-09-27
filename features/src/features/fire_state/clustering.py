@@ -18,6 +18,7 @@ sí solas no lo estén — esto modela un incendio que se mueve/crece de
 forma continua en el tiempo, no una bola fija alrededor de un punto.
 """
 import datetime as dt
+import hashlib
 import math
 from dataclasses import dataclass
 
@@ -114,6 +115,26 @@ class FireEvent:
         return max(dates)
 
 
+def _stable_event_id(detections: tuple[FireDetection, ...]) -> int:
+    """id determinista derivado del CONTENIDO del evento, no de su
+    posición en la lista de entrada -- clusterizar las mismas detecciones
+    dos veces (en cualquier orden, en cualquier corrida) debe dar siempre
+    el mismo event_id para el mismo incendio físico. Un id basado en
+    enumerate() cambia si el orden de entrada cambia (p. ej. porque
+    provino de un glob() de archivos parquet sin orden garantizado),
+    rompiendo la reproducibilidad de splits y de nombres de archivo Zarr
+    entre corridas. Colisión de hash entre dos eventos distintos es
+    posible en principio (espacio de 32 bits) pero, al volumen de
+    detecciones de este proyecto, del mismo orden de riesgo que una
+    colisión de hash corto de git -- no se agrega detección de colisión."""
+    keys = sorted(
+        f"{d.detected_at.isoformat()}|{d.latitude:.6f}|{d.longitude:.6f}"
+        for d in detections
+    )
+    digest = hashlib.sha256("||".join(keys).encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
 def build_fire_events(
     detections: list[FireDetection],
     spatial_eps_m: float = DEFAULT_SPATIAL_EPS_M,
@@ -123,7 +144,8 @@ def build_fire_events(
     grouped: dict[int, list[FireDetection]] = {}
     for label, detection in zip(labels, detections, strict=True):
         grouped.setdefault(label, []).append(detection)
-    return [
-        FireEvent(event_id=label, detections=tuple(dets))
-        for label, dets in sorted(grouped.items())
+    events = [
+        FireEvent(event_id=_stable_event_id(tuple(dets)), detections=tuple(dets))
+        for dets in grouped.values()
     ]
+    return sorted(events, key=lambda e: e.event_id)

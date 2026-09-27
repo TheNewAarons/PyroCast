@@ -104,3 +104,35 @@ def test_single_detection_event_start_and_end_date_are_the_same_day():
     events = build_fire_events([_det(-37.0, -72.0, at)])
     assert len(events) == 1
     assert events[0].start_date == events[0].end_date == at.date()
+
+
+def test_build_fire_events_event_id_is_stable_regardless_of_input_order():
+    # event_id se deriva del CONTENIDO del evento, no de su posición en la
+    # lista de entrada -- clusterizar las mismas detecciones en cualquier
+    # orden (p. ej. porque vinieron de un glob() de archivos parquet sin
+    # orden garantizado) debe asignar el mismo id al mismo incendio físico.
+    # Antes de este fix, event_id era solo enumerate(sorted(grouped)) --
+    # cambiaba con el orden de entrada, rompiendo la reproducibilidad de
+    # splits y nombres de archivo Zarr entre corridas distintas.
+    base = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+    fire_a = [_det(-37.0, -72.0, base), _det(-37.001, -72.001, base + dt.timedelta(hours=6))]
+    fire_b = [_det(-39.0, -71.0, base)]
+    all_detections = fire_a + fire_b
+
+    forward = build_fire_events(all_detections)
+    reversed_input = build_fire_events(list(reversed(all_detections)))
+
+    def id_for_event_near(events: list[FireEvent], lat: float) -> int:
+        return next(
+            e.event_id for e in events
+            if any(abs(d.latitude - lat) < 0.01 for d in e.detections)
+        )
+
+    assert id_for_event_near(forward, -37.0) == id_for_event_near(reversed_input, -37.0)
+    assert id_for_event_near(forward, -39.0) == id_for_event_near(reversed_input, -39.0)
+
+
+def test_build_fire_events_different_physical_events_get_different_ids():
+    base = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+    events = build_fire_events([_det(-37.0, -72.0, base), _det(-39.0, -71.0, base)])
+    assert events[0].event_id != events[1].event_id

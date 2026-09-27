@@ -1,5 +1,7 @@
-"""Rasterización de un `FireEvent` a una máscara binaria diaria sobre la
-grilla de trabajo — ver docs/fire-events.md.
+"""Rasterización de un `FireEvent` a una máscara binaria diaria de
+EXTENSIÓN ACTIVA DE FUEGO (no superficie quemada acumulada — cada día es
+independiente, una celda que ardió ayer y no hoy vuelve a `False`; ver
+docs/fire-events.md) sobre la grilla de trabajo.
 
 *** SIMPLIFICACIÓN EXPLÍCITA frente a la literatura: WildfireCube
 reconstruye la superficie quemada mediante kriging espaciotemporal sobre
@@ -20,7 +22,15 @@ from shapely.geometry import Point
 from features.fire_state.clustering import FireEvent
 from features.grid.grid import WorkGrid
 
-DEFAULT_BUFFER_M = 375.0  # tamaño de píxel nominal VIIRS (CLAUDE.md)
+DEFAULT_BUFFER_M = 375.0
+# RADIO del buffer, no el tamaño de píxel -- un círculo de 375 m de radio
+# cubre ~441 786 m², ~3.1x el área de un píxel VIIRS de 375x375 m
+# (140 625 m²). Es una sobre-cobertura DELIBERADA (no un intento fallido
+# de igualar el área del píxel): compensa la incertidumbre real de
+# geolocalización del sensor y el crecimiento del píxel fuera de nadir,
+# ninguno de los dos modelado explícitamente aquí. Sin calibrar contra
+# incendios reales de Chile -- ver docs/fire-events.md y
+# docs/limitations.md.
 
 
 def rasterize_daily_masks(
@@ -45,7 +55,23 @@ def rasterize_daily_masks(
             fill=0,
             dtype="uint8",
         )
-        masks[day] = raw.astype(bool)
+        mask = raw.astype(bool)
+        if not mask.any():
+            # Un día CON detecciones reales que termina sin ningún píxel
+            # marcado (buffer_m demasiado chico frente al tamaño de
+            # celda, detección fuera de los bounds de la grilla, o una
+            # reproyección degenerada) es indistinguible de "no hubo
+            # fuego real" si se deja pasar en silencio -- el mismo patrón
+            # de nodata fabricado/silencioso ya encontrado varias veces en
+            # este repo. Fallar ruidosamente en vez de devolver una
+            # máscara toda-False.
+            raise ValueError(
+                f"El día {day.isoformat()} tiene {len(geoms)} detección(es) pero "
+                f"ningún píxel quedó marcado tras rasterizar -- revisar buffer_m "
+                f"(demasiado chico frente a la resolución de la grilla) o si las "
+                f"detecciones caen fuera de los bounds de la grilla."
+            )
+        masks[day] = mask
     return masks
 
 

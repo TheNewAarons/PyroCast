@@ -51,8 +51,11 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   el síntoma más grave — esas celdas ahora se marcan con nodata en vez
   de fabricarse como `0.0` (terreno a nivel del mar) — pero el recorte
   exacto al bbox y el anclaje a una grilla canónica de 250 m compartida
-  entre todas las fuentes (DEM, ERA5-Land, vegetación) queda diferido a
-  `features/grid/`, todavía sin implementar.
+  entre todas las fuentes (DEM, ERA5-Land, vegetación) queda diferido:
+  `features/grid/` ya existe (define la grilla canónica de forma
+  determinista), pero este pipeline de DEM en particular todavía no
+  reproyecta contra ella — sigue calculando su propio destino desde los
+  bounds de su mosaico.
 - **DEM: bordes de huecos de datos no confiables**: una celda cuya
   elevación de origen es nodata se marca como nodata en la pendiente y
   orientación de salida, pero las celdas vecinas a ese hueco siguen
@@ -88,16 +91,34 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   muertes y viviendas destruidas que motivan este proyecto (ver
   CLAUDE.md). Encontrado en la revisión final del 2026-09-26.
 - **Reconstrucción de eventos de incendio: buffer + interpolación lineal,
-  no kriging**: `features/fire_state/` reconstruye la superficie quemada
-  diaria de un evento con un buffer espacial fijo alrededor de cada
-  detección FIRMS más interpolación temporal lineal (equivalente a unión
-  de máscaras) entre días con detección — WildfireCube (paper de
-  referencia) usa kriging espaciotemporal, que estima incertidumbre
-  espacial y produce una reconstrucción más plausible físicamente. Un
-  incendio que se apaga y se reactiva en otro punto dentro de la misma
-  ventana `temporal_eps` (2 días por defecto) se rellena como si hubiera
-  seguido ardiendo en ambos lugares durante el hueco, sobreestimando la
-  superficie quemada en ese caso. Ver `docs/fire-events.md`.
+  no kriging**: `features/fire_state/` reconstruye la extensión ACTIVA de
+  fuego diaria de un evento (no la superficie quemada acumulada — cada
+  máscara diaria es independiente, no incluye lo ya quemado en días
+  anteriores) con un buffer espacial fijo alrededor de cada detección
+  FIRMS más interpolación temporal lineal (equivalente a unión de
+  máscaras) entre días con detección — WildfireCube (paper de referencia)
+  usa kriging espaciotemporal, que estima incertidumbre espacial y
+  produce una reconstrucción más plausible físicamente. Un incendio que
+  se apaga y se reactiva en otro punto dentro de la misma ventana
+  `temporal_eps` (2 días por defecto) se rellena como si hubiera seguido
+  ardiendo en ambos lugares durante el hueco, sobreestimando la extensión
+  activa en ese caso. Ver `docs/fire-events.md`.
+- **El buffer de rasterización es un radio de 375 m, no el "tamaño de
+  píxel"**: cubre ~3.1x el área nominal de un píxel VIIRS (140 625 m² vs.
+  ~441 786 m² del buffer) — una sobre-cobertura deliberada (compensa
+  incertidumbre de geolocalización y crecimiento de píxel fuera de
+  nadir), no calibrada contra incendios reales. Encontrado en la revisión
+  final del 2026-09-27 — la documentación original describía el valor
+  como "tamaño de píxel" sin aclarar que se usa como radio, lo que
+  ocultaba la sobreestimación de área. Ver `docs/fire-events.md`.
+- **El "encadenamiento" (chaining) del clustering no tiene límite
+  temporal ni espacial acotado por evento** — solo detección-a-detección:
+  una cadena de detecciones a ≤2 días/≤750 m cada una puede encadenar un
+  evento arbitrariamente largo en el tiempo (verificado: 30 días) o en el
+  espacio (verificado: 83 km). Esto puede tanto sobre-fusionar episodios
+  distintos como, a la inversa, fragmentar de más un incendio disperso
+  por nubosidad/humo bajo condiciones de viento fuerte (p. ej. Puelche).
+  Ver `docs/fire-events.md`.
 - **Parámetros de clustering de eventos sin calibrar contra incendios
   reales**: `spatial_eps_m=750m` y `temporal_eps=2 días`
   (`features/fire_state/clustering.py`) son heurísticas basadas en la
