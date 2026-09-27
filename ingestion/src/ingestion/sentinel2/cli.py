@@ -33,4 +33,11 @@ def sentinel2(
         target_crs=settings.crs,
         target_resolution_m=settings.spatial_resolution_m,
     )
-    typer.echo(f"NDVI: {ndvi_path}")
+    # compute_and_save_vegetation siempre escribe "ndvi.tif" -- sin este
+    # renombrado, una segunda invocación para otro mes pisaría el NDVI del
+    # mes anterior, dejando siempre un único archivo en disco. El nombre
+    # con mes es lo que permite a features/dataset/ elegir "el composite
+    # mensual más cercano" entre varios meses ya ingeridos.
+    month_stamped_path = ndvi_path.parent / f"ndvi_{year:04d}-{month:02d}.tif"
+    ndvi_path.replace(month_stamped_path)
+    typer.echo(f"NDVI: {month_stamped_path}")

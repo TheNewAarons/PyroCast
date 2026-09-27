@@ -46,4 +46,11 @@ def test_sentinel2_cli_wires_settings_and_produces_ndvi(tmp_path, monkeypatch):
     result = runner.invoke(app, ["sentinel2", "--year", "2026", "--month", "1"])
     assert result.exit_code == 0, result.output
     assert "NDVI" in result.output
+
+    from shared.config import get_settings as reread_settings
+
+    settings = reread_settings()
+    month_stamped = settings.data_processed_dir / "vegetation" / "ndvi_2026-01.tif"
+    assert month_stamped.exists()
+    assert not (settings.data_processed_dir / "vegetation" / "ndvi.tif").exists()
     get_settings.cache_clear()
