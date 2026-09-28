@@ -792,6 +792,8 @@ dependencies = [
     { name = "shared" },
     { name = "torch" },
     { name = "typer" },
+    { name = "xarray" },
+    { name = "zarr" },
 ]
 
 [package.metadata]
@@ -801,6 +803,8 @@ requires-dist = [
     { name = "shared", editable = "shared" },
     { name = "torch", specifier = ">=2.4" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "xarray", specifier = ">=2024.7" },
+    { name = "zarr", specifier = ">=2.18" },
 ]
 
 [[package]]
