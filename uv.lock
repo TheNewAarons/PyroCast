@@ -1715,6 +1715,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
+    { name = "xarray" },
 ]
 
 [package.metadata]
@@ -1724,6 +1725,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.4" },
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "xarray", specifier = ">=2024.7" },
 ]
 
 [[package]]
