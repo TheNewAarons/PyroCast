@@ -51,7 +51,7 @@ calibrate:
 	@echo "pendiente: models/evaluation (calibración isotónica) aún no implementado"
 
 backtest:
-	@echo "pendiente: models/evaluation (backtesting) aún no implementado"
+	uv run --package models pyrocast-models backtest
 
 report:
 	@echo "pendiente: generación de docs/results.md aún no implementada"
