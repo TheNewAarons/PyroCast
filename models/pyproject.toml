@@ -11,10 +11,12 @@ dependencies = [
     "typer>=0.12",
     "xarray>=2024.7",
     "zarr>=2.18",
+    "matplotlib>=3.9",
 ]
 
 [project.scripts]
 pyrocast-models = "models.cli:app"
+pyrocast-train = "models.deep.train:app"
 
 [tool.uv.sources]
 shared = { workspace = true }

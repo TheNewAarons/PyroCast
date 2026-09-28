@@ -27,6 +27,10 @@ select = ["E", "F", "I", "UP", "B"]
 # requires exactly that pattern by design — not the mutable-default
 # footgun the rule exists to catch.
 "**/cli.py" = ["B008"]
+# models/deep/train.py bundles the pyrocast-train CLI in the same file
+# as the training loop (by explicit request) rather than a separate
+# cli.py — same Typer B008 exemption applies for the same reason.
+"models/src/models/deep/train.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

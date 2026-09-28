@@ -45,7 +45,7 @@ run-ca:
 	uv run --package models pyrocast-models run-ca
 
 train:
-	@echo "pendiente: models/deep aún no implementado"
+	uv run --package models pyrocast-train smoke-test
 
 calibrate:
 	@echo "pendiente: models/evaluation (calibración isotónica) aún no implementado"
