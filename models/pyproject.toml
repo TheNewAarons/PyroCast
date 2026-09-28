@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "shared",
+    "features",
     "numpy>=2.0",
     "torch>=2.4",
     "scikit-learn>=1.5",
@@ -17,6 +18,7 @@ pyrocast-models = "models.cli:app"
 
 [tool.uv.sources]
 shared = { workspace = true }
+features = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

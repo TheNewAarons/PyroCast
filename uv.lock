@@ -787,6 +787,7 @@ name = "models"
 version = "0.1.0"
 source = { editable = "models" }
 dependencies = [
+    { name = "features" },
     { name = "numpy" },
     { name = "scikit-learn" },
     { name = "shared" },
@@ -798,6 +799,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "features", editable = "features" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "shared", editable = "shared" },
