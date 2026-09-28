@@ -854,3 +854,48 @@ dejando `model_run` parcialmente poblado sin ningún aviso.
 `firms_event_id` primero (fallando con `UnknownFireEventError`,
 nombrando el id exacto, antes de escribir nada) y solo entonces
 inserta. Un backtest de N eventos ahora es atómico: todo o nada.
+
+## `models/deep/tfrecord_reader.py`: TFRecord leído a mano, sin `tensorflow` ni el paquete `tfrecord`
+
+`models/` depende de `torch`, no de `tensorflow` — agregar
+`tensorflow` (varios cientos de MB, un segundo framework de deep
+learning completo) solo para leer un formato de archivo no se
+justifica. El paquete `tfrecord` de PyPI tiene un conflicto de versión
+de `protobuf` conocido (encontrado durante la investigación previa a
+este plan, en un proyecto de terceros que enfrentó el mismo problema
+con este mismo dataset). Se implementó un lector mínimo (framing
+TFRecord + un decodificador protobuf acotado a los wire types que
+`tf.train.Example` realmente usa) verificado por round-trip contra un
+encoder propio en los tests -- sin acceso de red en este entorno para
+validar contra un archivo real de Kaggle, documentado explícitamente
+como una limitación en `docs/public-dataset.md`.
+
+## `models` gana `features` como dependencia: reutiliza `assemble_event_tensor`, no lo duplica
+
+`models/deep/public_dataset.py` necesita producir EXACTAMENTE el mismo
+tensor `(day, channel, y, x)` que `features/dataset/assemble.py`
+produce para un evento real de Chile -- reimplementar esa construcción
+en `models/` arriesgaría que ambos esquemas se desincronicen en
+silencio. `models → features` es la dirección "mainline" documentada
+en el diagrama de arquitectura de CLAUDE.md
+(`ingestion → features → models → evaluation → serving`), ya aceptada
+como no problemática en revisiones anteriores de este proyecto (a
+diferencia de `features → ingestion`, que sí invertiría la dirección
+establecida). También reutiliza `features/terrain/slope_aspect.py`
+para derivar pendiente/orientación desde la elevación de NDWS, en vez
+de duplicar la fórmula de Horn (1981).
+
+## Humedad relativa de NDWS: fórmula de presión de vapor, no reutiliza `relative_humidity_approx` de PyroCast directamente
+
+`features/weather/derive.py::relative_humidity_approx` espera
+temperatura + punto de rocío (dewpoint); NDWS no trae dewpoint, trae
+humedad específica (`sph`, kg/kg) -- una cantidad física distinta. Se
+implementó la conversión humedad-específica-a-relativa estándar de la
+OMM (presión de vapor real desde `sph` + presión, presión de
+saturación vía Magnus-Tetens con los MISMOS coeficientes de Alduchov &
+Eskridge 1996 que `relative_humidity_approx` ya usa, para mantener
+consistencia física entre ambas fórmulas) en vez de forzar una
+conversión intermedia sph→dewpoint que agregaría un paso de error
+adicional. Asume presión estándar a nivel del mar (101325 Pa) porque
+NDWS no trae presión de superficie -- documentado como aproximación en
+`docs/limitations.md`.

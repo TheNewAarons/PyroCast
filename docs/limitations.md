@@ -262,6 +262,38 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   la mejor proxy disponible con datos abiertos, no contra la superficie
   quemada real.
 
+- **La humedad relativa derivada de NDWS asume presión estándar a
+  nivel del mar (101325 Pa), no la presión real de cada ubicación**:
+  NDWS no trae un campo de presión de superficie; ignorar la variación
+  real de presión con la elevación introduce un error que crece con la
+  altitud del recorte. Es una aproximación aceptada para datos de
+  PREENTRENAMIENTO (no la señal de evaluación final contra incendios
+  de Chile) -- ver `docs/decisions.md` y `docs/public-dataset.md`.
+- **`fuel_type` de las muestras de NDWS es SIEMPRE "desconocido" (código
+  99)**: NDWS no tiene ningún canal de cobertura de suelo o tipo de
+  vegetación categórico. Un U-Net preentrenado con estas muestras nunca
+  ve una señal real de `fuel_type` durante el preentrenamiento -- solo
+  durante el fine-tuning sobre eventos de Chile (que sí trae
+  `fuel_type` real de ESA WorldCover) aprende a usar ese canal. Esto es
+  intencional (ver `docs/decisions.md`: inventar una clase de
+  combustible desde NDVI sería un dato fabricado, peor que admitir que
+  no existe), pero significa que el preentrenamiento por sí solo no
+  enseña nada sobre `fuel_type`.
+- **`models/deep/tfrecord_reader.py` nunca se probó contra un archivo
+  real descargado de Kaggle** (solo contra un encoder propio, por
+  round-trip) -- este entorno no tiene acceso de red para descargarlo.
+  Es correcto según la especificación pública del formato TFRecord y
+  autoconsistente, pero una incompatibilidad real con el archivo exacto
+  que Kaggle distribuye hoy no puede descartarse con 100% de certeza
+  hasta probarlo contra un archivo real. Ver `docs/public-dataset.md`.
+- **El nombre exacto de los archivos dentro del zip de Kaggle no se
+  pudo confirmar** al escribir `docs/public-dataset.md` (la página
+  requiere una sesión de navegador autenticada). `models/deep/public_dataset.py`
+  no asume ningún nombre -- recibe una lista/glob explícito de rutas
+  del caller -- pero si Kaggle distribuye un formato distinto de
+  TFRecord (algunas re-subidas de terceros ofrecen `.npy`), este
+  loader no lo soporta.
+
 ## Herramienta de investigación
 
 Herramienta de investigación. No usar para decisiones operativas de
