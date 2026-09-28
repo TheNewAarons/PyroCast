@@ -37,13 +37,17 @@ pública del formato. Este entorno no tiene acceso de red para
 descargar un archivo real de Kaggle y probar compatibilidad byte a
 byte contra él -- ver docs/public-dataset.md. ***
 """
+import gzip
 import math
 import struct
 from collections.abc import Iterator
+from gzip import GzipFile
+from io import BufferedReader
 from pathlib import Path
-from typing import BinaryIO
 
 import numpy as np
+
+_GZIP_MAGIC = b"\x1f\x8b"
 
 _CRC32C_POLY = 0x82F63B78  # polinomio Castagnoli reflejado
 _CRC_MASK_DELTA = 0xA282EAD8
@@ -79,7 +83,7 @@ def _mask_crc(crc: int) -> int:
     return (((crc >> 15) | (crc << 17)) + _CRC_MASK_DELTA) & 0xFFFFFFFF
 
 
-def _read_exact(f: BinaryIO, n: int) -> bytes:
+def _read_exact(f: BufferedReader | GzipFile, n: int) -> bytes:
     data = f.read(n)
     if len(data) != n:
         raise CorruptTFRecordError(
@@ -160,8 +164,22 @@ def _parse_example(data: bytes) -> dict[str, np.ndarray]:
     return result
 
 
+def _open_maybe_gzip(path: Path) -> BufferedReader | GzipFile:
+    # NDWS se distribuye como shards *.tfrecord.gz (ver
+    # docs/public-dataset.md) -- se detecta por los magic bytes (1f 8b),
+    # NUNCA por la extensión del archivo: el plan deliberadamente nunca
+    # asume nombres de archivo de Kaggle, y sniffear el contenido real
+    # funciona sin importar cómo el usuario haya nombrado el archivo
+    # descargado.
+    with open(path, "rb") as probe:
+        magic = probe.read(2)
+    if magic == _GZIP_MAGIC:
+        return gzip.open(path, "rb")
+    return open(path, "rb")
+
+
 def read_tf_examples(path: Path) -> Iterator[dict[str, np.ndarray]]:
-    with open(path, "rb") as f:
+    with _open_maybe_gzip(path) as f:
         while True:
             length_bytes = f.read(8)
             if length_bytes == b"":

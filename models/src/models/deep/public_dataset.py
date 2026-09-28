@@ -111,6 +111,23 @@ def transform_ndws_record(record: dict[str, np.ndarray], sample_id: int) -> Publ
     elevation = record["elevation"].astype("float64")
     height, width = elevation.shape
 
+    # sin esto, una feature con una forma distinta a `elevation` (p.
+    # ej. un `th` de 1x1 en vez de la grilla completa) hace que numpy
+    # la haga BROADCAST en silencio sobre toda la grilla más abajo --
+    # un único valor "fabricado" repetido como si fuera un campo real.
+    # Encontrado en la revisión final del 2026-09-28.
+    mismatched = {
+        name: record[name].shape
+        for name in _REQUIRED_NDWS_FEATURES
+        if record[name].shape != elevation.shape
+    }
+    if mismatched:
+        raise ValueError(
+            f"feature(s) NDWS con forma distinta a elevation {elevation.shape}: "
+            f"{mismatched} -- todas las features de un registro deben cubrir la "
+            f"misma grilla."
+        )
+
     slope_deg, aspect_deg = compute_slope_aspect(elevation, _NDWS_RESOLUTION_M, _NDWS_RESOLUTION_M)
 
     th_rad = np.radians(record["th"].astype("float64"))
@@ -155,6 +172,14 @@ def transform_ndws_record(record: dict[str, np.ndarray], sample_id: int) -> Publ
     )
     tensor = assemble_event_tensor(channels, grid, event_id=sample_id)
     assert list(tensor.coords["channel"].values) == list(CHANNEL_ORDER)
+    # `assemble_event_tensor` copia crs/transform de `grid` a los attrs
+    # del tensor -- sin esto, un DataArray/Zarr de NDWS afirmaría en
+    # silencio ser un recorte de Chile en EPSG:32719, cuando en
+    # realidad es un chip de EE.UU. con un CRS/transform nominales (ver
+    # docstring del módulo). Encontrado en la revisión final del
+    # 2026-09-28.
+    tensor.attrs["georeference"] = "nominal"
+    tensor.attrs["source_dataset"] = "NDWS"
 
     return PublicDatasetSample(tensor=tensor, next_day_fire_mask=next_day_fire_mask)
 

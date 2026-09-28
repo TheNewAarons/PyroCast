@@ -66,14 +66,32 @@ descarga por su cuenta directamente desde Kaggle.
 
 ## Formato
 
-TFRecord (posiblemente comprimido con gzip, `.tfrecord.gz`), el formato
-de contenedor binario de TensorFlow — cada archivo es una secuencia de
+TFRecord, posiblemente comprimido con gzip (`.tfrecord.gz` — soportado:
+`models/deep/tfrecord_reader.py` detecta la compresión por los magic
+bytes del archivo, no por su nombre, así que funciona sin importar cómo
+el usuario haya nombrado el archivo descargado). El formato es el
+contenedor binario de TensorFlow — cada archivo es una secuencia de
 registros `longitud + CRC32C enmascarado + datos + CRC32C enmascarado`,
 donde `datos` es un mensaje protobuf `tf.train.Example` serializado.
 `models/deep/tfrecord_reader.py` implementa un lector de este formato
 SIN depender de `tensorflow` ni del paquete `tfrecord` de PyPI (ver
 `docs/decisions.md`) — ver ese módulo para el detalle exacto del
-parseo, verificado contra la especificación pública del formato.
+parseo.
+
+**Qué tan verificado está el lector, en tres niveles honestos** (no
+todo "verificado" significa lo mismo):
+1. **Contra la especificación pública del formato**: el polinomio
+   CRC32C y la fórmula de máscara de TFRecord están verificados contra
+   el vector de control estándar de la especificación (no solo contra
+   el propio encoder de test, que duplica la misma implementación y
+   por eso no podría detectar un polinomio o una máscara incorrectos
+   por sí solo).
+2. **Autoconsistente por round-trip**: el anidamiento protobuf
+   (`Example` → `Features` → `Feature` → `FloatList`) se verifica
+   codificando y decodificando con un encoder propio en los tests.
+3. **Sin probar**: un archivo TFRecord real descargado de Kaggle — este
+   entorno no tiene acceso de red para obtener uno. Ver
+   `docs/limitations.md`.
 
 Cada `Example` trae 13 features, cada una un `float_list` empaquetado
 de 4096 valores (64×64 aplanado, reconstruido en ese orden por

@@ -280,19 +280,46 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   no existe), pero significa que el preentrenamiento por sí solo no
   enseña nada sobre `fuel_type`.
 - **`models/deep/tfrecord_reader.py` nunca se probó contra un archivo
-  real descargado de Kaggle** (solo contra un encoder propio, por
-  round-trip) -- este entorno no tiene acceso de red para descargarlo.
-  Es correcto según la especificación pública del formato TFRecord y
-  autoconsistente, pero una incompatibilidad real con el archivo exacto
-  que Kaggle distribuye hoy no puede descartarse con 100% de certeza
-  hasta probarlo contra un archivo real. Ver `docs/public-dataset.md`.
+  real descargado de Kaggle** -- este entorno no tiene acceso de red
+  para descargarlo. Verificado en tres niveles distintos (ver
+  `docs/public-dataset.md` para el detalle): el CRC32C y su fórmula de
+  máscara están verificados contra el vector de control ESTÁNDAR de la
+  especificación (no solo contra el encoder de test propio, que
+  duplica la misma implementación y por eso no podía por sí solo
+  detectar un polinomio o máscara incorrectos -- corregido en la
+  revisión final del 2026-09-28, antes solo había verificación por
+  round-trip); el anidamiento protobuf y el framing TFRecord (incluido
+  gzip, soportado y probado) son autoconsistentes por round-trip. Lo
+  que sigue sin probar es la compatibilidad byte a byte contra un
+  archivo real de Kaggle.
 - **El nombre exacto de los archivos dentro del zip de Kaggle no se
   pudo confirmar** al escribir `docs/public-dataset.md` (la página
   requiere una sesión de navegador autenticada). `models/deep/public_dataset.py`
-  no asume ningún nombre -- recibe una lista/glob explícito de rutas
-  del caller -- pero si Kaggle distribuye un formato distinto de
-  TFRecord (algunas re-subidas de terceros ofrecen `.npy`), este
-  loader no lo soporta.
+  no asume ningún nombre -- recibe una lista explícita de rutas del
+  caller -- pero si Kaggle distribuye un formato distinto de TFRecord
+  (algunas re-subidas de terceros ofrecen `.npy`), este loader no lo
+  soporta.
+- **El decodificador protobuf de `tfrecord_reader.py` no soporta
+  `float_list` no empaquetado (wire type 5) ni un campo `packed`
+  partido en varios chunks length-delimited del mismo número de campo**
+  -- ambas son codificaciones legales del protobuf de
+  `tf.train.Example`, aunque el escritor real de TensorFlow nunca las
+  produce (siempre un único chunk packed). Riesgo bajo en la práctica,
+  documentado para no sobre-afirmar conformidad total con la
+  especificación. Encontrado en la revisión final del 2026-09-28.
+- **Features que no son `float_list` (p. ej. `int64_list`) se
+  descartan en silencio** por `tfrecord_reader.py`, en vez de fallar --
+  si Kaggle alguna vez cambia la codificación de una feature de NDWS,
+  `transform_ndws_record` la reportaría como "feature faltante", no
+  como "feature con tipo inesperado". Encontrado en la revisión final
+  del 2026-09-28.
+- **`split_public_dataset` con menos de 2 shards da `val` vacío sin
+  aviso** (0 shards → todo vacío; 1 shard → todo a `train`) -- mismo
+  tipo de degradación silenciosa que `features/dataset/split.py` tenía
+  antes de su propia revisión final, sin el mismo aviso explícito acá
+  todavía. Riesgo bajo (un usuario real de NDWS tendrá muchos más de 2
+  shards), documentado para no ocultarlo. Encontrado en la revisión
+  final del 2026-09-28.
 
 ## Herramienta de investigación
 

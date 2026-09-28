@@ -158,6 +158,26 @@ def test_transform_ndws_record_rejects_a_record_missing_a_required_feature():
         transform_ndws_record(record, sample_id=1)
 
 
+def test_transform_ndws_record_rejects_a_feature_with_a_mismatched_shape():
+    # 'th' con una sola celda en vez de la grilla completa -- sin esta
+    # validación, numpy hace broadcast en silencio y un único valor de
+    # dirección de viento se "fabrica" repetido sobre todo el chip.
+    record = _make_ndws_record()
+    record["th"] = np.full((1, 1), 90.0, dtype="float32")
+    with pytest.raises(ValueError, match="th"):
+        transform_ndws_record(record, sample_id=1)
+
+
+def test_transform_ndws_record_stamps_the_tensor_as_a_nominal_non_chile_georeference():
+    # NDWS son recortes de EE.UU., no de Chile -- el tensor no puede
+    # afirmar en silencio EPSG:32719 real sin marcarlo como nominal
+    # (encontrado en la revisión final del 2026-09-28).
+    record = _make_ndws_record()
+    sample = transform_ndws_record(record, sample_id=1)
+    assert sample.tensor.attrs["georeference"] == "nominal"
+    assert sample.tensor.attrs["source_dataset"] == "NDWS"
+
+
 def test_load_public_dataset_samples_reads_a_real_fixture_file(tmp_path):
     path = tmp_path / "fixture.tfrecord"
     _write_tfrecord(path, [_make_ndws_record(), _make_ndws_record()])

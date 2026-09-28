@@ -4,9 +4,11 @@ Verificado por round-trip contra un ENCODER escrito a mano en
 tfrecord_fixtures.py (no hay acceso de red en este entorno para probar
 contra un archivo real descargado de Kaggle -- ver
 docs/public-dataset.md, sección de incertidumbre)."""
+import gzip
+
 import numpy as np
 import pytest
-from models.deep.tfrecord_reader import CorruptTFRecordError, read_tf_examples
+from models.deep.tfrecord_reader import CorruptTFRecordError, _crc32c, _mask_crc, read_tf_examples
 from tfrecord_fixtures import write_tfrecord as _write_tfrecord
 
 
@@ -70,3 +72,42 @@ def test_read_tf_examples_on_an_empty_file_yields_nothing(tmp_path):
     path = tmp_path / "empty.tfrecord"
     path.write_bytes(b"")
     assert list(read_tf_examples(path)) == []
+
+
+def test_read_tf_examples_rejects_a_corrupted_data_crc(tmp_path):
+    path = tmp_path / "fixture.tfrecord"
+    _write_tfrecord(path, [{"elevation": np.zeros((2, 2), dtype="float32")}])
+    raw = bytearray(path.read_bytes())
+    raw[-1] ^= 0xFF  # corrompe un byte del CRC de datos (últimos 4 bytes)
+    path.write_bytes(bytes(raw))
+    with pytest.raises(CorruptTFRecordError, match="CRC"):
+        list(read_tf_examples(path))
+
+
+def test_read_tf_examples_reads_a_gzip_compressed_shard(tmp_path):
+    # NDWS se distribuye como *.tfrecord.gz -- ver docs/public-dataset.md.
+    # Sniffear los magic bytes (1f 8b), no la extensión: el plan
+    # deliberadamente nunca asume nombres de archivo de Kaggle.
+    plain_path = tmp_path / "fixture.tfrecord"
+    original = {"elevation": np.arange(16, dtype="float32").reshape(4, 4)}
+    _write_tfrecord(plain_path, [original])
+
+    gz_path = tmp_path / "fixture.tfrecord.gz"
+    with gzip.open(gz_path, "wb") as f:
+        f.write(plain_path.read_bytes())
+
+    records = list(read_tf_examples(gz_path))
+    assert len(records) == 1
+    np.testing.assert_array_equal(records[0]["elevation"], original["elevation"])
+
+
+def test_crc32c_matches_the_standard_check_vector():
+    # el encoder de fixture (tfrecord_fixtures.py) duplica esta MISMA
+    # implementación de CRC32C -- un round-trip contra él por sí solo
+    # nunca podría detectar un polinomio o una máscara incorrectos
+    # (ambos fallarían de la misma forma en ambos lados). Este test
+    # verifica el CRC32C de PRODUCCIÓN contra el vector de control
+    # estándar de la especificación pública, independiente del
+    # encoder de test.
+    assert _crc32c(b"123456789") == 0xE3069283
+    assert _mask_crc(0) == 0xA282EAD8
