@@ -354,6 +354,54 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   no probado ni protegido explícitamente, porque `batch_size=1` (el
   default) lo evita por construcción; ver el punto de batch_size más
   arriba.
+- **`pretrain`/`finetune` ahora EXIGEN un split de val no vacío
+  (corregido en la revisión final del 2026-09-29 -- antes, un val
+  vacío hacía que `val_loss` se reportara como `0.0` fabricado,
+  arruinando early stopping y dejando `best.pt` sin entrenar de
+  verdad, en silencio)**. Esto significa que, con muy pocos eventos de
+  Chile (`features/dataset/split.py` da `val: []` con menos de 3
+  eventos), `finetune` simplemente se niega a correr en vez de
+  entrenar con una validación degradada -- correcto para no fabricar
+  una métrica, pero significa que el proyecto necesita un mínimo de
+  eventos reales de Chile antes de poder hacer fine-tuning en
+  absoluto. Ver `docs/decisions.md`.
+- **`pretrain --max-samples` es un tope manual, no una solución de
+  streaming real**: sin él, cargar el dataset NDWS oficial completo
+  (18.545 chips, ~4.1 GB medidos, ver `docs/model-card.md`) en una
+  máquina de 8 GB sin GPU puede agotar la memoria antes de la primera
+  época. El usuario debe elegir el tope a mano; no hay un `Dataset`
+  perezoso indexado por posición de archivo (requeriría escanear los
+  shards TFRecord una vez para construir un índice de offsets, no
+  construido en este plan).
+- **`SmallUNet` falla con un `RuntimeError` de PyTorch poco claro (no
+  un `ValueError` con mensaje propio) si `H` o `W` es menor que
+  `2**depth`** -- verificado con `depth=3` sobre una grilla de 9x7.
+  Los eventos reales de Chile (`features/dataset/pipeline.py`,
+  `DEFAULT_CONTEXT_BUFFER_M`) son suficientemente grandes en la
+  práctica, pero `depth` es un flag de CLI y nada impide pasarlo con
+  una grilla más chica.
+- **`last.pt` puede registrar un `best_val_loss` desactualizado**: se
+  guarda antes de la comparación de esa misma época contra el mejor
+  histórico, así que en una corrida de una sola época `last.pt` queda
+  con `best_val_loss=inf` en vez del valor real de esa época. Cosmético
+  (no afecta qué checkpoint es "best", ni su contenido), pero confuso
+  si alguien inspecciona `last.pt` directamente.
+- **Reentrenar sobre un `run_dir` ya usado mezcla dos corridas**:
+  `history.csv` se trunca al empezar, pero `best.pt` de la corrida
+  anterior sobrevive si la nueva corrida nunca lo supera -- el
+  directorio puede terminar describiendo el historial de la corrida B
+  con el checkpoint de la corrida A. No se valida que `run_dir` esté
+  vacío.
+- **`finetune` no valida que `in_channels` del checkpoint coincida con
+  el tensor de Chile antes de fallar** -- si algún día cambia
+  `CHANNEL_ORDER` o se usa un checkpoint de otro esquema de canales, el
+  error aparece como una forma incompatible dentro de la primera
+  `Conv2d`, no como un mensaje que nombre el desajuste.
+- **La pérdida promedio por época promedia sobre BATCHES, no sobre
+  muestras** -- con `batch_size=1` (el default de producción) esto es
+  irrelevante (cada batch es una muestra), pero con un `batch_size`
+  mayor y un dataset cuyo tamaño no es múltiplo exacto, el último batch
+  (más chico) pesa lo mismo que los demás en el promedio.
 
 ## Herramienta de investigación
 

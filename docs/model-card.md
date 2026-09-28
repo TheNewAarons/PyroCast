@@ -79,6 +79,17 @@ previo. `batch_size=1` por defecto (ver "Tamaño de batch" abajo).
 pyrocast-train pretrain --shard-dir <ruta a los .tfrecord(.gz)>
 ```
 
+**Uso de memoria, medido, no estimado**: cada muestra NDWS de 64x64
+pesa ~214 KB una vez cargada en `PublicDatasetSample` (medido con
+`tracemalloc` sobre 500 muestras sintéticas de esa forma). Los 18.545
+chips oficiales completos pesan **~4.1 GB** solo en muestras -- antes
+del modelo, el optimizador, las activaciones y matplotlib, en una
+máquina de 8 GB sin GPU (ver "Hardware de desarrollo" arriba).
+`pretrain` acepta `--max-samples N` para topear cuántas muestras se
+cargan en memoria por split (train y val, cada uno hasta N) -- sin
+tope por defecto, para no imponer un límite arbitrario a quien tenga
+más RAM.
+
 ### 2. Fine-tuning (`pyrocast-train finetune`)
 
 Sobre el split train/val de eventos de Chile (`features/dataset/`,

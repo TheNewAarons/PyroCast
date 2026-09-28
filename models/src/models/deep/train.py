@@ -5,6 +5,7 @@ matplotlib (sin herramientas externas de tracking -- ver
 docs/decisions.md). El CLI (`pyrocast-train`) vive al final de este
 mismo archivo."""
 import csv
+import itertools
 import json
 import random
 import time
@@ -139,6 +140,22 @@ def train_model(
     config: TrainingConfig,
     run_dir: Path,
 ) -> list[EpochResult]:
+    # sin esto, un dataset vacío hace que _run_epoch divida por
+    # max(0,1)=1 y reporte una pérdida de 0.0 -- un número FABRICADO
+    # (no medido) que además hace que early stopping y la selección
+    # de "best" se comporten como si el modelo hubiera validado
+    # perfecto desde la época 1. Encontrado en la revisión final del
+    # 2026-09-29. Ver docs/limitations.md.
+    if len(train_dataset) == 0:  # type: ignore[arg-type]
+        raise ValueError(
+            "train_dataset está vacío -- no hay nada con qué entrenar."
+        )
+    if len(val_dataset) == 0:  # type: ignore[arg-type]
+        raise ValueError(
+            "val_dataset está vacío -- early stopping y la selección del checkpoint "
+            "'best' necesitan un val real, no se puede continuar en silencio."
+        )
+
     set_seed(config.seed)
     run_dir.mkdir(parents=True, exist_ok=True)
     device = _select_device()
@@ -215,6 +232,17 @@ def pretrain(
     max_epochs: int = typer.Option(50, help="Épocas máximas"),
     patience: int = typer.Option(5, help="Épocas sin mejora antes de early stopping"),
     seed: int = typer.Option(42, help="Semilla de reproducibilidad"),
+    max_samples: int | None = typer.Option(
+        None,
+        help=(
+            "Tope de muestras a cargar en memoria por split (train y val, cada uno "
+            "hasta este número) -- cada muestra NDWS de 64x64 pesa ~215 KB una vez "
+            "cargada; los 18.545 chips oficiales completos pesan ~4 GB, más el "
+            "modelo/optimizador/activaciones. En una máquina de 8 GB sin GPU (ver "
+            "docs/model-card.md), cargar el dataset completo sin este tope puede "
+            "agotar la memoria. Sin tope por defecto -- el usuario decide."
+        ),
+    ),
 ) -> None:
     """Preentrena SmallUNet sobre shards TFRecord de Next Day Wildfire
     Spread ya descargados -- ver docs/public-dataset.md."""
@@ -224,8 +252,18 @@ def pretrain(
         raise typer.Exit(code=1)
 
     split = split_public_dataset(shard_paths, seed=seed)
-    train_samples = list(load_public_dataset_samples(split["train"]))
-    val_samples = list(load_public_dataset_samples(split["val"]))
+    if not split["val"]:
+        typer.echo(
+            f"El split de val de NDWS quedó vacío (solo {len(shard_paths)} shard(s) -- "
+            f"se necesitan al menos 2 para separar train/val). Sin val real no se "
+            f"puede hacer early stopping honesto (ver docs/limitations.md)."
+        )
+        raise typer.Exit(code=1)
+
+    train_samples = list(
+        itertools.islice(load_public_dataset_samples(split["train"]), max_samples)
+    )
+    val_samples = list(itertools.islice(load_public_dataset_samples(split["val"]), max_samples))
 
     config = TrainingConfig(
         phase="pretrain", in_channels=len(CHANNEL_ORDER), base_channels=base_channels,
@@ -269,8 +307,17 @@ def finetune(
         typer.echo("El split de train de eventos de Chile está vacío.")
         raise typer.Exit(code=1)
 
+    if not splits["val"]:
+        typer.echo(
+            "El split de val de eventos de Chile está vacío -- no se puede hacer "
+            "early stopping honesto validando contra el propio train. Agrega más "
+            "eventos o corre `pyrocast-features build-dataset` de nuevo (ver "
+            "docs/limitations.md)."
+        )
+        raise typer.Exit(code=1)
+
     train_events = _load_chile_events(dataset_dir, splits["train"])
-    val_events = _load_chile_events(dataset_dir, splits["val"]) if splits["val"] else train_events
+    val_events = _load_chile_events(dataset_dir, splits["val"])
 
     config = TrainingConfig(
         phase="finetune", in_channels=pretrained_config.in_channels,

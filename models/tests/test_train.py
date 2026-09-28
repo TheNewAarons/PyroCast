@@ -5,6 +5,7 @@ import csv
 import datetime as dt
 
 import numpy as np
+import pytest
 import torch
 import xarray as xr
 from features.dataset.assemble import CHANNEL_ORDER
@@ -80,6 +81,54 @@ def test_chile_finetune_dataset_skips_single_day_events_without_crashing():
     assert len(dataset) == 0
 
 
+def _make_sentinel_event(event_id: int, n_days: int) -> xr.DataArray:
+    # cada (día, canal) tiene un valor único y reconocible -- permite
+    # verificar que ChileFinetuneDataset mapea (evento, día) al par
+    # EXACTO (día -> fire_mask del día+1), no solo a algo de la forma
+    # correcta (hallazgo de la revisión final del 2026-09-29: los tests
+    # anteriores solo afirmaban formas, nunca contenido).
+    data = np.zeros((n_days, len(CHANNEL_ORDER), _SIZE, _SIZE), dtype="float32")
+    for day in range(n_days):
+        for channel in range(len(CHANNEL_ORDER)):
+            data[day, channel] = event_id * 1000 + day * 10 + channel
+    days = [(dt.date(2026, 1, 1) + dt.timedelta(days=d)).isoformat() for d in range(n_days)]
+    return xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={"day": days, "channel": list(CHANNEL_ORDER)},
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": event_id},
+    )
+
+
+def test_chile_finetune_dataset_maps_each_pair_to_the_exact_day_and_next_day_fire_mask():
+    events = [
+        _make_sentinel_event(event_id=1, n_days=4),
+        _make_sentinel_event(event_id=2, n_days=2),
+    ]
+    dataset = ChileFinetuneDataset(events)
+    assert len(dataset) == 4  # evento 1: 3 pares (d0-1,d1-2,d2-3); evento 2: 1 par (d0-1)
+
+    fire_idx = CHANNEL_ORDER.index("fire_mask")
+
+    # par 0: evento 1, día 0 -> día 1
+    x, y = dataset[0]
+    assert x[0, 0, 0].item() == 1000  # evento 1, día 0, canal 0
+    assert x[fire_idx, 0, 0].item() == 1000 + fire_idx  # evento 1, día 0, canal fire_mask
+    assert y[0, 0].item() == 1000 + 10 + fire_idx  # evento 1, día 1, fire_mask
+
+    # par 2: evento 1, día 2 -> día 3 (el último par del evento 1;
+    # el evento 1 con n_days=4 aporta 3 pares, índices 0,1,2)
+    x, y = dataset[2]
+    assert x[0, 0, 0].item() == 1000 + 20
+    assert y[0, 0].item() == 1000 + 30 + fire_idx
+
+    # índice 3: primer (y único) par del evento 2, INMEDIATAMENTE
+    # después del último par del evento 1 -- confirma que el límite
+    # entre eventos no se pierde ni se desplaza.
+    x, y = dataset[3]
+    assert x[0, 0, 0].item() == 2000  # evento 2, día 0, canal 0
+    assert y[0, 0].item() == 2000 + 10 + fire_idx  # evento 2, día 1, fire_mask
+
+
 def test_train_model_reduces_loss_over_a_few_epochs(tmp_path):
     set_seed(42)
     samples = [_make_public_sample(seed=i) for i in range(6)]
@@ -134,12 +183,64 @@ def test_train_model_early_stops_and_best_checkpoint_matches_best_epoch(tmp_path
 
     assert len(results) < 20  # se detuvo antes de max_epochs
     best_epoch_result = min(results, key=lambda r: r.val_loss)
+    # el checkpoint "best" DEBE corresponder exactamente a la época con
+    # menor val_loss -- no cualquier época válida (hallazgo de la
+    # revisión final del 2026-09-29: la versión anterior de este test
+    # no afirmaba nada real sobre esto).
+    best_checkpoint = torch.load(tmp_path / "best.pt", map_location="cpu", weights_only=False)
+    assert best_checkpoint["epoch"] == best_epoch_result.epoch
     _loaded_model, _opt_state, loaded_config = load_checkpoint(tmp_path / "best.pt")
     assert loaded_config.max_epochs == config.max_epochs
     # el checkpoint "best" existe incluso si la mejor época fue la 1ª
     # (Review Focus: early stopping en la primera época no debe
     # crashear por no tener una época "anterior" a la que volver).
     assert best_epoch_result.epoch >= 1
+
+
+def test_train_model_rejects_an_empty_val_dataset(tmp_path):
+    # sin esto, un val vacío hacía que val_loss reportara 0.0 (0/1)
+    # de forma silenciosa: early stopping paraba al azar y best.pt
+    # quedaba en la época 1, sin entrenar -- ver docs/limitations.md
+    # y la revisión final del 2026-09-29.
+    samples = [_make_public_sample(seed=i) for i in range(3)]
+    config = _make_config(max_epochs=3, patience=3)
+    model = SmallUNet(
+        in_channels=config.in_channels, base_channels=config.base_channels, depth=config.depth
+    )
+    with pytest.raises(ValueError, match="val"):
+        train_model(
+            model, NDWSPretrainDataset(samples), NDWSPretrainDataset([]), config, run_dir=tmp_path
+        )
+
+
+def test_train_model_rejects_an_empty_train_dataset(tmp_path):
+    samples = [_make_public_sample(seed=i) for i in range(3)]
+    config = _make_config(max_epochs=3, patience=3)
+    model = SmallUNet(
+        in_channels=config.in_channels, base_channels=config.base_channels, depth=config.depth
+    )
+    with pytest.raises(ValueError, match="train"):
+        train_model(
+            model, NDWSPretrainDataset([]), NDWSPretrainDataset(samples), config, run_dir=tmp_path
+        )
+
+
+def test_train_model_works_with_the_production_default_batch_size_of_one(tmp_path):
+    # batch_size=1 es el default real de ambas fases del CLI (ver
+    # docs/model-card.md) -- las fixtures de los demás tests usan
+    # batch_size=2, este es el único que cubre el valor por defecto
+    # real.
+    set_seed(42)
+    samples = [_make_public_sample(seed=i) for i in range(3)]
+    config = _make_config(max_epochs=2, patience=2, batch_size=1)
+    model = SmallUNet(
+        in_channels=config.in_channels, base_channels=config.base_channels, depth=config.depth
+    )
+    results = train_model(
+        model, NDWSPretrainDataset(samples[:2]), NDWSPretrainDataset(samples[2:]),
+        config, run_dir=tmp_path,
+    )
+    assert len(results) == 2
 
 
 def test_set_seed_makes_model_init_deterministic():

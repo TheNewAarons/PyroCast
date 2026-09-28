@@ -942,3 +942,40 @@ opciones de CLI, no el error de "default mutable" que la regla B008
 busca detectar) no cubría ese nombre de archivo. Se agregó una segunda
 entrada en `per-file-ignores` para `models/src/models/deep/train.py`
 con la misma justificación.
+
+## `train_model`/`pretrain`/`finetune` rechazan un split de val vacío en vez de sustituirlo en silencio
+
+Hallazgo de la revisión final del 2026-09-29: con un val vacío,
+`_run_epoch` dividía `total_loss(0.0) / max(n_batches(0), 1)`, dando
+`val_loss = 0.0` -- un número FABRICADO, no medido, que además hacía
+que la época 1 "mejorara" trivialmente (`0.0 < inf`) y que todas las
+épocas siguientes empataran para siempre, disparando early stopping en
+exactamente `patience + 1` épocas sin relación alguna con el progreso
+real. `finetune` además tenía un fallback que validaba contra el propio
+`train` cuando `val` venía vacío (`features/dataset/split.py` da
+`val: []` con menos de 3 eventos, el caso normal al principio de este
+proyecto), lo que sesga la selección de "best" hacia el modelo más
+sobreajustado, sin ningún aviso.
+
+Decisión: `train_model` levanta `ValueError` si `train_dataset` o
+`val_dataset` están vacíos (defensa en profundidad, cubre cualquier
+caller futuro); `pretrain` y `finetune` además verifican esto ANTES de
+cargar datos o entrenar, con un mensaje claro y `typer.Exit(code=1)` en
+vez de una traza de Python. Esto es consistente con el mandato de
+honestidad de CLAUDE.md: negarse a correr es preferible a reportar una
+métrica que no fue medida.
+
+## `pretrain --max-samples`: mitigación manual al uso de memoria, no una reescritura a streaming
+
+Medido en la revisión final del 2026-09-29: cada muestra NDWS de 64x64
+pesa ~214 KB una vez materializada en `PublicDatasetSample`
+(`tracemalloc` sobre 500 muestras) -- el dataset NDWS oficial completo
+(18.545 chips) pesaría ~4.1 GB solo en muestras, en una máquina de 8 GB
+sin GPU (ver `docs/model-card.md`). `load_public_dataset_samples` ya es
+un generador; `pretrain` lo materializaba entero con `list(...)`,
+descartando ese streaming. Se agregó `--max-samples` (vía
+`itertools.islice`) como mitigación mínima y explícita -- una solución
+completa (un `Dataset` perezoso indexado por posición de archivo)
+requeriría escanear los shards TFRecord una vez para construir un
+índice de offsets de registro, fuera del alcance de este plan (ver
+`docs/limitations.md`).
