@@ -4,6 +4,7 @@ backtest y la escritura de bench/results corren de verdad."""
 import json
 
 import numpy as np
+import pytest
 import xarray as xr
 from models.cli import app
 from typer.testing import CliRunner
@@ -54,7 +55,11 @@ def test_backtest_cli_writes_bench_results_json(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "models.cli.load_test_events", lambda dataset_dir: fixture_events
     )
-    monkeypatch.setattr("models.cli.persist_backtest_run", lambda **kwargs: 1)
+    persisted_calls = []
+    monkeypatch.setattr(
+        "models.cli.persist_backtest_run",
+        lambda **kwargs: persisted_calls.append(kwargs) or [1, 2],
+    )
 
     result = runner.invoke(app, ["backtest", "--n-bootstrap", "50"])
     assert result.exit_code == 0, result.output
@@ -65,4 +70,29 @@ def test_backtest_cli_writes_bench_results_json(tmp_path, monkeypatch):
     assert payload["model_name"] == "cellular_automata"
     assert len(payload["per_event"]) == 2
     assert set(payload["aggregate"]) == {"iou", "dice", "brier", "ece"}
+
+    # el registro debe describir la corrida que produjo estos números,
+    # no un dict copiado a mano que puede desincronizarse de los
+    # defaults reales de SpreadParameters (encontrado en la revisión
+    # final del 2026-09-28).
+    assert payload["config"]["base_spread_prob"] == pytest.approx(0.3)
+    assert "fuel_flammability" in payload["config"]
+    assert payload["seed"] == 42
+    assert payload["n_bootstrap"] == 50
+    assert "ece_bins" in payload
+    assert "confidence" in payload
+
+    # una sola llamada, atómica, con los 2 eventos juntos -- no una
+    # llamada por evento.
+    assert len(persisted_calls) == 1
+    assert len(persisted_calls[0]["per_event"]) == 2
+
     get_settings.cache_clear()
+
+
+def test_backtest_cli_help_does_not_claim_the_model_is_calibrated(monkeypatch):
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    result = runner.invoke(app, ["backtest", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "calibrado" not in result.output.lower()

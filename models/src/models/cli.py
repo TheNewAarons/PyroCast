@@ -1,4 +1,5 @@
 """Punto de entrada del CLI de modelos: `pyrocast-models`."""
+import dataclasses
 import json
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from models.cellular_automata.model import CellularAutomatonModel
 from models.cellular_automata.simulate import simulate_fire_spread
 from models.evaluation.backtest import BacktestResult, run_backtest
 from models.evaluation.db import persist_backtest_run
+
+_ECE_BINS = 10
+_CONFIDENCE = 0.95
 
 app = typer.Typer()
 
@@ -59,13 +63,28 @@ def load_test_events(dataset_dir: Path) -> list[xr.DataArray]:
 
 
 def _result_to_json(
-    result: BacktestResult, model_name: str, config: dict[str, float]
+    result: BacktestResult,
+    model_name: str,
+    config: dict[str, object],
+    seed: int,
+    n_bootstrap: int,
+    ece_bins: int,
+    confidence: float,
 ) -> dict[str, object]:
     return {
         "model_name": model_name,
         "config": config,
         "split": "test",
         "n_events": len(result.per_event),
+        # sin estos cuatro valores, baseline.json no se puede
+        # regenerar a partir de su propio contenido -- violaría el
+        # mismo criterio de reproducibilidad que P6 (splits.json:
+        # "nada de resultados no versionables"). Encontrado en la
+        # revisión final del 2026-09-28.
+        "seed": seed,
+        "n_bootstrap": n_bootstrap,
+        "ece_bins": ece_bins,
+        "confidence": confidence,
         "per_event": [
             {
                 "event_id": m.event_id, "iou": m.iou, "dice": m.dice,
@@ -84,8 +103,10 @@ def backtest(
     n_bootstrap: int = typer.Option(1000, help="Número de remuestreos bootstrap"),
     seed: int = typer.Option(42, help="Semilla del bootstrap y de la simulación"),
 ) -> None:
-    """Corre el backtest del autómata celular calibrado contra el split
-    de test de `features/dataset/` y guarda el resultado en
+    """Corre el autómata celular (parámetros por defecto de
+    SpreadParameters, SIN CALIBRAR contra incendios reales -- ver
+    docs/limitations.md y docs/cellular-automata.md) contra el split de
+    test de `features/dataset/` y guarda el resultado en
     bench/results/baseline.json y en PostGIS (model_run +
     evaluation_result). Requiere que `pyrocast-features build-dataset`
     ya haya corrido -- ver docs/dataset-card.md."""
@@ -96,25 +117,34 @@ def backtest(
         typer.echo("El split de test no tiene eventos.")
         raise typer.Exit(code=0)
 
-    params = {"base_spread_prob": 0.3, "slope_coefficient": 4.0, "wind_coefficient": 0.2}
     model = CellularAutomatonModel(seed=seed)
-    result = run_backtest(model, events, n_bootstrap=n_bootstrap, seed=seed)
+    result = run_backtest(
+        model, events, n_bootstrap=n_bootstrap, seed=seed, ece_bins=_ECE_BINS,
+        confidence=_CONFIDENCE,
+    )
+    # derivado del objeto real que corrió, no copiado a mano -- si
+    # alguien cambia un default en rules.py, el registro sigue
+    # describiendo la corrida real (encontrado en la revisión final
+    # del 2026-09-28: la versión anterior tenía un dict hardcodeado que
+    # podía desincronizarse en silencio, y omitía fuel_flammability).
+    config: dict[str, object] = dataclasses.asdict(model.params)
 
     output_dir = Path("bench") / "results"
     output_dir.mkdir(parents=True, exist_ok=True)
-    payload = _result_to_json(result, "cellular_automata", params)
+    payload = _result_to_json(
+        result, "cellular_automata", config, seed, n_bootstrap, _ECE_BINS, _CONFIDENCE
+    )
     (output_dir / "baseline.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2)
     )
     typer.echo(f"Backtest: {len(result.per_event)} evento(s) -> {output_dir / 'baseline.json'}")
 
     engine = create_engine(settings.postgres_dsn)
-    for metrics in result.per_event:
-        persist_backtest_run(
-            engine=engine, firms_event_id=metrics.event_id,
-            model_name="cellular_automata", config=params, split="test", metrics=metrics,
-        )
-    typer.echo(f"Métricas persistidas en PostGIS ({len(result.per_event)} evaluation_result).")
+    persist_backtest_run(
+        engine=engine, per_event=result.per_event,
+        model_name="cellular_automata", config=config, split="test",
+    )
+    typer.echo(f"Métricas persistidas en PostGIS ({len(result.per_event)} model_run).")
 
 
 app.command("run-ca")(run_ca)

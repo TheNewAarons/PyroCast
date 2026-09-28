@@ -809,3 +809,48 @@ autómata celular sin calibrar contra incendios reales, ver
 cierre de etapa es que el ARNÉS completo (Protocol, backtest, métricas,
 persistencia, CLI) ya existe y es reutilizable sin cambios cuando P9-P11
 agregue el U-Net como segundo implementador de `FireSpreadModel`.
+
+## `run_backtest`: se compara "¿ha ardido esta celda alguna vez?" acumulado, no la extensión activa diaria
+
+Hallazgo de la revisión final del 2026-09-28: el canal `fire_mask` de
+`features/dataset/` es la extensión ACTIVA de fuego por día (una celda
+que ardió ayer y no hoy vuelve a `False`, ver
+`features/fire_state/rasterize.py`), pero `CellularAutomatonModel`
+predice el estado ACUMULADO -- `simulate.py` documenta explícitamente
+que `burning` es monótono no decreciente porque el autómata no modela
+extinción. Comparar la predicción acumulada contra la verdad cruda día a
+día penaliza al modelo por una diferencia de CONVENCIÓN (una celda que
+FIRMS dejó de ver activa) y no por un error real de propagación --
+antes de este fix, un backtest sobre un evento realista de varios días
+daba IoU/ECE dramáticamente peores de lo que la calidad real de la
+propagación explicaría.
+
+Decisión: `run_backtest` acumula la verdad con
+`np.logical_or.accumulate` antes de calcular las 4 métricas, así ambas
+series (predicha y real) miden la misma pregunta: "¿esta celda ha
+ardido alguna vez hasta el día d?". Esto NO corrige la simplificación
+de que el autómata celular no modela extinción -- esa sigue siendo una
+limitación real y documentada (`docs/cellular-automata.md`,
+`docs/limitations.md`) -- solo evita medir esa simplificación ya
+conocida como si fuera un error adicional del backtest. Alternativa
+descartada: comparar solo el último día del evento (pierde toda la
+trayectoria intermedia, que es justamente lo que el backtest existe
+para evaluar).
+
+## `models/evaluation/db.py::persist_backtest_run`: una transacción para todo el backtest, no una por evento
+
+Hallazgo de la revisión final del 2026-09-28: la versión original abría
+una transacción `engine.begin()` POR EVENTO dentro del loop del CLI. Si
+el evento `k` de N tenía un `firms_event_id` que ya no existe en
+`fire_event` (p. ej. los archivos Zarr sobrevivieron a una base de
+datos recreada -- un escenario real en este proyecto, donde
+`data/processed/` está fuera de git y Postgres se puede recrear desde
+cero), `scalar_one()` levantaba `NoResultFound` sin nombrar el evento
+ni la causa, y los primeros `k-1` eventos ya habían sido persistidos --
+dejando `model_run` parcialmente poblado sin ningún aviso.
+
+`persist_backtest_run` ahora recibe la lista completa de
+`EventMetrics` y persiste todo en UNA transacción: resuelve todos los
+`firms_event_id` primero (fallando con `UnknownFireEventError`,
+nombrando el id exacto, antes de escribir nada) y solo entonces
+inserta. Un backtest de N eventos ahora es atómico: todo o nada.

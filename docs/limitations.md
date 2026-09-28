@@ -242,6 +242,25 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   cualitativa sea correcta) puede dar valores de ECE altos que no
   reflejan un error de implementación sino la falta de calibración
   probabilística real del modelo. Ver `docs/cellular-automata.md`.
+- **El autómata celular sigue sin modelar extinción, y el backtest ya no
+  penaliza esa simplificación como si fuera un error adicional (pero
+  la simplificación en sí sigue ahí)**: `run_backtest` compara la
+  predicción (acumulada, monótona) contra la verdad TAMBIÉN acumulada
+  -- ver `docs/decisions.md`. Esto hace que las métricas midan
+  correctamente "¿la propagación predicha coincide con dónde ardió
+  realmente, alguna vez?", pero un incendio real que se apaga y el
+  autómata sigue "quemando" esa zona en cada día posterior todavía es
+  una limitación real del modelo (ver más arriba, "no hay modelo de
+  extinción/consumo de combustible") -- el backtest deja de castigar
+  DOS VECES la misma simplificación ya conocida, no la elimina.
+- **Acumular detecciones FIRMS día a día como proxy de "superficie
+  quemada acumulada" no es lo mismo que la superficie quemada
+  acumulada real**: VIIRS tiene huecos de revisita y cobertura de
+  nubes -- una celda que ardió mientras el satélite no pasó (o pasó con
+  nubes) nunca aparece en `fire_mask` ningún día, y por lo tanto tampoco
+  en la verdad acumulada que usa `run_backtest`. El backtest mide contra
+  la mejor proxy disponible con datos abiertos, no contra la superficie
+  quemada real.
 
 ## Herramienta de investigación
 
