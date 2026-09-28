@@ -899,3 +899,46 @@ conversión intermedia sph→dewpoint que agregaría un paso de error
 adicional. Asume presión estándar a nivel del mar (101325 Pa) porque
 NDWS no trae presión de superficie -- documentado como aproximación en
 `docs/limitations.md`.
+
+## SmallUNet usa GroupNorm, no BatchNorm
+
+Justificado en el docstring de `models/deep/unet.py` -- este proyecto
+entrena con `batch_size=1` por defecto (sin GPU, eventos reales de
+tamaño variable, ver `docs/model-card.md`), donde las estadísticas de
+BatchNorm no tienen sentido. GroupNorm normaliza dentro de una sola
+muestra, funciona igual a cualquier tamaño de batch.
+
+## Focal Loss en vez de BCE ponderada
+
+Ver `models/deep/losses.py` para la justificación completa y
+`docs/model-card.md` para el resumen -- el término de "focusing" de
+focal loss baja la pérdida de negativos fáciles YA confiados
+correctamente, no solo corrige la frecuencia de clase (que BCE
+ponderada también resuelve).
+
+## Fine-tuning: sin capas congeladas, learning rate reducido en su lugar
+
+Decisión documentada en `docs/model-card.md` -- NDWS (1 km, EE.UU.) y
+los tensores de PyroCast (250 m, Chile) difieren en resolución,
+geografía y fuente de datos; congelar el encoder asumiría una
+transferencia de filtros de bajo nivel sin evidencia empírica.
+
+## `matplotlib` como nueva dependencia de `models`
+
+El enunciado pidió explícitamente "logging simple a CSV + gráficos con
+matplotlib (sin herramientas externas de tracking pesadas)" -- ninguna
+alternativa más liviana ya presente en el workspace cubre "generar un
+PNG de una curva de pérdida" sin agregar una dependencia nueva de
+todas formas.
+
+## `models/deep/train.py` agrega su propia excepción B008 en el ruff del workspace
+
+El CLI `pyrocast-train` vive en el mismo archivo que el bucle de
+entrenamiento (por pedido explícito del enunciado: "train.py" con las
+dos fases), no en un `cli.py` separado -- la excepción existente de
+`ruff` para `**/cli.py` (necesaria porque el patrón `typer.Option(...)`
+como valor por defecto de un parámetro es justamente cómo Typer declara
+opciones de CLI, no el error de "default mutable" que la regla B008
+busca detectar) no cubría ese nombre de archivo. Se agregó una segunda
+entrada en `per-file-ignores` para `models/src/models/deep/train.py`
+con la misma justificación.

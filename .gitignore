@@ -22,6 +22,11 @@ data/processed/
 *.nc
 *.zarr/
 
+# Checkpoints/logs de entrenamiento (models/deep/train.py) — grandes,
+# regenerables desde datos + TrainingConfig, mismo criterio que data/.
+runs/
+*.pt
+
 # OS
 .DS_Store
 

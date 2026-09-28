@@ -320,6 +320,40 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   todavía. Riesgo bajo (un usuario real de NDWS tendrá muchos más de 2
   shards), documentado para no ocultarlo. Encontrado en la revisión
   final del 2026-09-28.
+- **Ningún tiempo de entrenamiento real sobre NDWS o sobre eventos
+  reales de Chile fue medido en esta sesión** -- solo el smoke test
+  sintético (medido, ~8.4s, ver `docs/model-card.md`). El tiempo real
+  depende del tamaño real de cada evento de Chile (variable, no
+  medido) y del volumen real de NDWS descargado (no disponible en este
+  entorno sin red). Cualquier estimación de horas/época en
+  `docs/model-card.md` es un orden de magnitud, no una medición.
+- **`batch_size=1` por defecto, sin soporte de relleno/recorte para
+  batir eventos de distinto tamaño** -- entrenar con más de un evento
+  de Chile por batch requeriría lógica de padding/cropping no
+  construida en este plan (ver `docs/model-card.md`, "Tamaño de
+  batch").
+- **La decisión de fine-tuning (sin capas congeladas, learning rate
+  reducido) no está validada empíricamente contra la alternativa
+  (congelar el encoder)** -- es la opción más conservadora dado el
+  desajuste de dominio NDWS/Chile, pero ninguna corrida real comparó
+  ambas estrategias en este proyecto todavía.
+- **`shared.model_protocol.FireSpreadModel` no está implementado para
+  SmallUNet** -- el modelo devuelve logits `(batch, 1, H, W)`, no
+  `(day, y, x)` en `[0, 1]` como el Protocol exige; un wrapper que lo
+  implemente (aplicar sigmoid, adaptar la forma) queda para cuando se
+  necesite correr `models/evaluation/backtest.py` contra el U-Net.
+- **`finetune` no resume el estado del optimizador de `pretrain`** --
+  cada fase crea un `Adam` nuevo dentro de `train_model`. Es una
+  simplificación deliberada (retomar los momentos de Adam ajustados a
+  la tasa de aprendizaje de preentrenamiento no tiene un beneficio
+  claro al cambiar de fase/LR), no un descuido, pero significa que
+  `finetune` no es un "continuar entrenando" literal, solo una
+  inicialización de pesos.
+- **`ChileFinetuneDataset` con `batch_size > 1` sobre eventos de
+  distinto tamaño espacial fallaría en el collate de `DataLoader`** --
+  no probado ni protegido explícitamente, porque `batch_size=1` (el
+  default) lo evita por construcción; ver el punto de batch_size más
+  arriba.
 
 ## Herramienta de investigación
 
