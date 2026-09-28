@@ -222,6 +222,26 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   todavía no está conectado a `features/dataset/` -- este riesgo no se
   ha materializado en producción, pero queda cerrado antes de esa
   integración en vez de esperar a que alguien lo redescubra.
+- **Backtest: la evaluación del día 0 es tautológica por construcción**:
+  `CellularAutomatonModel.predict` siembra `initial_burning` desde el
+  propio `fire_mask` del día 0 del evento (no hay "día -1" del que
+  sembrar) -- así que la predicción del día 0 para las celdas ya en
+  llamas coincide con la verdad por definición, no porque el modelo haya
+  "acertado" nada. Incluir el día 0 en las métricas agregadas del
+  backtest sesga (levemente, hacia arriba) el desempeño reportado. Ver
+  `docs/decisions.md`.
+- **Bootstrap del backtest remuestrea valores por evento, no eventos
+  reales ni píxeles**: con pocos eventos de test (realista en las
+  primeras corridas de este proyecto), el intervalo de confianza
+  bootstrap es necesariamente ancho y poco informativo -- es la
+  limitación estadística esperada de tener pocos eventos, no un error
+  de implementación.
+- **`ece_score` con probabilidades sin calibrar en absoluto** (p. ej. el
+  autómata celular, que nunca se calibró explícitamente para producir
+  probabilidades bien calibradas, solo para que la propagación
+  cualitativa sea correcta) puede dar valores de ECE altos que no
+  reflejan un error de implementación sino la falta de calibración
+  probabilística real del modelo. Ver `docs/cellular-automata.md`.
 
 ## Herramienta de investigación
 

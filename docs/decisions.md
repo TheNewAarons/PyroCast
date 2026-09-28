@@ -774,3 +774,38 @@ hasheable pese a `frozen=True` (por el campo `dict`); `run-ca --size 0`
 da un traceback de Typer sin validar; `docs/cellular-automata.md` no
 lleva el aviso de "herramienta de investigación" (consistente con
 `fire-events.md`/`dataset-card.md`, no una regresión nueva).
+
+## `shared/model_protocol.py`: la interfaz común de modelo vive en `shared/`, tipada contra `xr.DataArray`
+
+El enunciado pidió el `Protocol` en `shared/` explícitamente, para que
+`models/cellular_automata` (P7) y el futuro U-Net (P9-P11) lo
+implementen igual sin que `models/evaluation/backtest.py` ni el reporte
+final (P16) dupliquen lógica por modelo. `shared/` gana `xarray` como
+dependencia SOLO para tipar `event: xr.DataArray` concretamente (el
+mismo tensor que `features/dataset/assemble.py` ya produce) -- `shared/`
+NO importa `features/` ni `models/`, preservando la dirección de
+dependencia establecida (todo depende de `shared/`, nunca al revés).
+
+## `models/evaluation/db.py`: cada backtest es un experimento nuevo, no un upsert
+
+A diferencia de `features/dataset/db.py::persist_fire_event_metadata`
+(upsert por `firms_event_id`, corregido en la revisión final de ese
+módulo), `persist_backtest_run` hace un `insert` liso en `model_run` +
+`evaluation_result` cada vez. Es la semántica correcta para un registro
+de experimento de ML: re-correr un backtest con parámetros distintos (o
+incluso los mismos, para verificar reproducibilidad) es una corrida
+NUEVA que vale la pena conservar, no una corrección de la anterior.
+
+## Cierre de Etapa 3: modelo funcional y medible de punta a punta
+
+Con `models/cellular_automata/` (P7) implementando
+`shared.model_protocol.FireSpreadModel` y `models/evaluation/backtest.py`
+corriendo métricas per-evento + agregadas con bootstrap contra
+cualquier modelo que cumpla esa interfaz, el proyecto tiene su primer
+modelo funcional de punta a punta: ingesta → features → grilla/eventos →
+dataset → simulación → evaluación. Es deliberadamente simple (un
+autómata celular sin calibrar contra incendios reales, ver
+`docs/cellular-automata.md`/`docs/limitations.md`) — el valor de este
+cierre de etapa es que el ARNÉS completo (Protocol, backtest, métricas,
+persistencia, CLI) ya existe y es reutilizable sin cambios cuando P9-P11
+agregue el U-Net como segundo implementador de `FireSpreadModel`.
