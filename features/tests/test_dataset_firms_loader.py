@@ -59,6 +59,27 @@ def test_load_firms_detections_preserves_leading_zero_in_acq_time(tmp_path):
     assert detections[0].detected_at.minute == 5
 
 
+def test_load_firms_detections_handles_a_real_firms_time_with_dropped_leading_zeros(tmp_path):
+    # Mismo hallazgo que ingestion/firms/parser.py (revisión final del
+    # 2026-09-29, contra datos REALES de FIRMS VIIRS_SNPP_SP): el Area
+    # API de FIRMS serializa acq_time como campo NUMÉRICO -- "517" en el
+    # parquet real significa 05:17 UTC, no "51:7" (ValueError: hour must
+    # be in 0..23). Esta función DUPLICA _parse_detected_at de
+    # ingestion/firms/parser.py a propósito (features nunca depende de
+    # ingestion) -- pero eso significa que también duplicó el bug.
+    _write_fixture_parquet(
+        tmp_path,
+        [{
+            "latitude": "-37.5", "longitude": "-72.3", "acq_date": "2025-11-01",
+            "acq_time": "517", "confidence": "n", "satellite": "N",
+            "instrument": "VIIRS", "frp": "1.4",
+        }],
+        "chunk1.parquet",
+    )
+    detections = load_firms_detections(tmp_path, dt.date(2025, 11, 1), dt.date(2025, 11, 1))
+    assert detections[0].detected_at == dt.datetime(2025, 11, 1, 5, 17, tzinfo=dt.UTC)
+
+
 def test_load_firms_detections_handles_missing_frp(tmp_path):
     _write_fixture_parquet(
         tmp_path,

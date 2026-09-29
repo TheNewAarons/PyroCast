@@ -12,11 +12,16 @@ from shared.schemas import FireDetection
 
 
 def _parse_detected_at(acq_date: str, acq_time: str) -> dt.datetime:
-    # acq_time viene como "HHMM" sin separador, con cero a la izquierda
-    # (p. ej. "0005" = 00:05 UTC) -- NO tratar como entero, se pierde el
-    # cero inicial. (Mismo cuidado que ingestion/firms/parser.py.)
-    hour = int(acq_time[:2])
-    minute = int(acq_time[2:])
+    # acq_time representa "HHMM" sin separador -- PERO el Area API de
+    # FIRMS lo serializa como campo NUMÉRICO: los ceros a la izquierda se
+    # pierden ("517" en el parquet real significa 05:17 UTC, no "51:7").
+    # Verificado contra datos reales (revisión final del 2026-09-29,
+    # mismo hallazgo que ingestion/firms/parser.py -- esta función lo
+    # duplica a propósito, así que también duplicaba el bug). zfill(4)
+    # restaura el ancho fijo antes de cortar HH/MM.
+    padded = acq_time.zfill(4)
+    hour = int(padded[:2])
+    minute = int(padded[2:])
     date = dt.date.fromisoformat(acq_date)
     return dt.datetime(date.year, date.month, date.day, hour, minute, tzinfo=dt.UTC)
 
