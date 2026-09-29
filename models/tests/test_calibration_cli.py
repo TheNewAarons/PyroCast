@@ -114,3 +114,94 @@ def test_run_with_a_nonexistent_checkpoint_gives_a_clear_message(tmp_path):
     )
     assert result.exit_code == 1
     assert "checkpoint" in result.output.lower()
+
+
+_REQUIRED_ENV = {
+    "FIRMS_MAP_KEY": "x", "CDS_API_URL": "https://cds.climate.copernicus.eu/api",
+    "CDS_API_KEY": "x", "COPERNICUS_DATASPACE_CLIENT_ID": "id",
+    "COPERNICUS_DATASPACE_CLIENT_SECRET": "secret", "POSTGRES_HOST": "localhost",
+    "POSTGRES_PORT": "5432", "POSTGRES_DB": "pyrocast", "POSTGRES_USER": "pyrocast",
+    "POSTGRES_PASSWORD": "x",
+}
+
+
+def _make_chile_event_for_calibration_cli(event_id: int, n_days: int = 3, size: int = 8):
+    import numpy as np
+    import xarray as xr
+
+    data = np.zeros((n_days, len(CHANNEL_ORDER), size, size), dtype="float32")
+    fire_idx = CHANNEL_ORDER.index("fire_mask")
+    data[:, fire_idx] = (np.random.default_rng(event_id).random((n_days, size, size)) > 0.8)
+    return xr.DataArray(
+        data.astype("float32"), dims=("day", "channel", "y", "x"),
+        coords={
+            "day": [f"2026-01-{d + 1:02d}" for d in range(n_days)],
+            "channel": list(CHANNEL_ORDER),
+        },
+        name="fire_event_tensor",
+        attrs={"resolution_m": 250.0, "event_id": event_id},
+    )
+
+
+def test_run_with_checkpoint_and_chile_val_calibrates_against_real_chile_events(
+    tmp_path, monkeypatch
+):
+    # El usuario eligió "sin preentrenamiento, solo fine-tuning en
+    # Chile" (docs/backtest-2026.md) -- sin esta opción, el único val
+    # posible para calibrar era --shard-dir de NDWS, que no existe en
+    # ese camino.
+    import json
+
+    for key, value in _REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+
+    checkpoint_path = tmp_path / "model.pt"
+    _make_real_checkpoint(checkpoint_path)
+
+    dataset_dir = tmp_path / "data" / "processed" / "dataset"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "splits.json").write_text(json.dumps({"train": [1, 2], "val": [3, 4]}))
+    for event_id in (1, 2, 3, 4):
+        _make_chile_event_for_calibration_cli(event_id).to_dataset().to_zarr(
+            dataset_dir / f"event_{event_id:04d}.zarr", mode="w"
+        )
+
+    result = runner.invoke(
+        app, ["run", "--checkpoint", str(checkpoint_path), "--chile-val"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "brier" in result.output.lower()
+    assert (checkpoint_path.with_name("model.calibrator.pt")).exists()
+    get_settings.cache_clear()
+
+
+def test_run_with_chile_val_and_an_empty_val_split_refuses(tmp_path, monkeypatch):
+    import json
+
+    for key, value in _REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+
+    checkpoint_path = tmp_path / "model.pt"
+    _make_real_checkpoint(checkpoint_path)
+
+    dataset_dir = tmp_path / "data" / "processed" / "dataset"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "splits.json").write_text(json.dumps({"train": [1], "val": []}))
+    _make_chile_event_for_calibration_cli(1).to_dataset().to_zarr(
+        dataset_dir / "event_0001.zarr", mode="w"
+    )
+
+    result = runner.invoke(
+        app, ["run", "--checkpoint", str(checkpoint_path), "--chile-val"]
+    )
+    assert result.exit_code == 1
+    assert "val" in result.output.lower()
+    get_settings.cache_clear()

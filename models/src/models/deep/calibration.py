@@ -19,6 +19,7 @@ los PESOS exactos, no a una ejecución de calibración específica -- dos
 calibraciones distintas contra el mismo checkpoint son ambas válidas.
 """
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,7 @@ import torch
 import typer
 import xarray as xr
 from features.dataset.assemble import CHANNEL_ORDER
+from shared.config import get_settings
 from sklearn.isotonic import IsotonicRegression
 from torch.utils.data import Dataset
 
@@ -329,6 +331,14 @@ def run(
     shard_dir: Path | None = typer.Option(
         None, help="Shards NDWS para el set de validación real"
     ),
+    chile_val: bool = typer.Option(
+        False,
+        help=(
+            "Calibra contra el split 'val' de eventos reales de Chile "
+            "(features/dataset/, requiere --checkpoint) en vez de shards NDWS -- "
+            "para cuando no hay dataset público disponible, ver docs/backtest-2026.md."
+        ),
+    ),
     run_dir: Path = typer.Option(
         Path("runs") / "calibration", help="Dónde guardar checkpoint/calibrador de fixture"
     ),
@@ -339,6 +349,25 @@ def run(
     if fixture:
         checkpoint_path = _build_fixture_checkpoint(run_dir, seed=seed)
         val_dataset = _build_fixture_val_dataset(seed=seed)
+        calibration_path = default_calibration_path(checkpoint_path)
+    elif checkpoint is not None and chile_val:
+        checkpoint_path = checkpoint
+        if not checkpoint_path.exists():
+            typer.echo(f"No existe el checkpoint {checkpoint_path}.")
+            raise typer.Exit(code=1)
+        settings = get_settings()
+        dataset_dir = settings.data_processed_dir / "dataset"
+        splits = json.loads((dataset_dir / "splits.json").read_text())
+        if not splits["val"]:
+            typer.echo(
+                "El split de val de eventos de Chile está vacío -- no se puede "
+                "reportar un antes/después honesto (ver docs/limitations.md)."
+            )
+            raise typer.Exit(code=1)
+        from models.deep.train import ChileFinetuneDataset, _load_chile_events
+
+        val_events = _load_chile_events(dataset_dir, splits["val"])
+        val_dataset = ChileFinetuneDataset(val_events)
         calibration_path = default_calibration_path(checkpoint_path)
     elif checkpoint is not None and shard_dir is not None:
         checkpoint_path = checkpoint
@@ -363,7 +392,10 @@ def run(
         val_dataset = NDWSPretrainDataset(val_samples)
         calibration_path = default_calibration_path(checkpoint_path)
     else:
-        typer.echo("Usar --fixture, o --checkpoint junto con --shard-dir.")
+        typer.echo(
+            "Usar --fixture, --checkpoint junto con --shard-dir, o --checkpoint "
+            "junto con --chile-val."
+        )
         raise typer.Exit(code=1)
 
     result = calibrate_checkpoint(checkpoint_path, val_dataset, calibration_path=calibration_path)
