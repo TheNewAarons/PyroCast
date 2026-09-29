@@ -50,15 +50,21 @@ muestras de validación sintéticas × 16×16 celdas cada una).
 **El ECE de 0.0000 después de calibrar es real, no un error, y
 demuestra en vivo el riesgo ya documentado en `docs/decisions.md`**:
 al ajustar y evaluar la regresión isotónica sobre el MISMO set de
-validación (sin un split de calibración separado), y con muy pocas
-muestras de fixture (1024 celdas), la regresión isotónica tiene
-suficientes grados de libertad para memorizar casi perfectamente la
-frecuencia observada de ESE set exacto -- un ECE de 0.0 en la propia
-muestra de ajuste no implica que el modelo esté perfectamente calibrado
-en general. Con un dataset real (miles de muestras, más variedad), este
-efecto de sobreajuste del calibrador sería mucho menor, pero no
-desaparece sin un split de calibración separado -- ver
-`docs/limitations.md`.
+validación (sin un split de calibración separado), el ECE "después"
+es estructuralmente cercano a 0 -- **esto NO es un artefacto de pocas
+muestras que mejoraría con más datos**: verificado en la revisión final
+del 2026-09-29 con hasta 100.000 muestras sintéticas, el ECE en la
+propia muestra de ajuste sigue siendo de orden `1e-17` (machine-zero).
+El valor predicho por la regresión isotónica para cada nivel de
+probabilidad observado ES, por construcción, el promedio de los
+targets de ese mismo nivel en el set de ajuste -- exactamente lo que
+ECE con bins mide. Esto significa que **la columna "ECE después" de
+esta tabla es una prueba de que el pipeline corre de punta a punta, no
+una medición de qué tan bien calibrado queda el modelo en datos
+nuevos** -- para eso hace falta evaluar sobre un set separado del que
+se usó para ajustar (ver `models/tests/test_calibration.py::test_fit_isotonic_calibrator_improves_ece_on_a_known_miscalibration`,
+que sí mide una mejora real usando un split fit/eval, y
+`docs/limitations.md`).
 
 ## El modelo calibrado implementa `FireSpreadModel` (P8)
 
@@ -66,7 +72,15 @@ desaparece sin un split de calibración separado -- ver
 `shared.model_protocol.FireSpreadModel` -- el mismo Protocol que
 `CellularAutomatonModel` (P7) ya implementa, con el mismo convenio de
 día 0 (el estado conocido del propio evento, no una predicción real;
-ver `models/cellular_automata/model.py`). Esto significa que
+ver `models/cellular_automata/model.py`) **y prediciendo de forma
+autorregresiva** para los días siguientes: cada día se predice
+reemplazando el canal `fire_mask` de entrada por la PROPIA predicción
+calibrada del modelo para el día anterior (nunca por el `fire_mask`
+real observado), igual que `CellularAutomatonModel` evoluciona su
+propio estado de fuego desde el día 0. Sin esto, `CalibratedUNet`
+sería un pronóstico de un solo paso con acceso a verdad de terreno que
+el autómata celular nunca tiene -- corregido en la revisión final del
+2026-09-29, ver `docs/decisions.md`. Esto significa que
 `models/evaluation/backtest.py` puede correr contra un `CalibratedUNet`
 exactamente igual que contra el autómata celular, sin ningún caso
 especial por modelo.

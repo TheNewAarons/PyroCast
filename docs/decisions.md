@@ -985,24 +985,48 @@ requeriría escanear los shards TFRecord una vez para construir un
 No hay un split de calibración separado del de validación -- el
 enunciado pide explícitamente ajustar "contra las frecuencias
 observadas en el set de validación" y comparar "sobre el set de
-validación", y un split adicional reduciría aún más un set de
-validación ya pequeño en este proyecto. Encaja con la práctica estándar
-para datasets chicos: el riesgo de sobreajustar el calibrador (que solo
-tiene la forma monótona por grados de libertad de un ajuste isotónico,
-muy pocos parámetros efectivos comparado con la red) es bajo con
-datasets reales de tamaño razonable -- aunque con el fixture sintético
-diminuto de `make calibrate` (1024 celdas) el efecto es visible y real
-(ECE después = 0.0000, ver `docs/calibration.md`), no solo teórico.
+validación". **Corrección de la revisión final del 2026-09-29**: el
+ECE "después" que resulta de este diseño es cercano a 0
+ESTRUCTURALMENTE (el valor que la regresión isotónica predice para
+cada nivel de probabilidad ES, por construcción, el promedio de los
+targets observados en ESE mismo nivel dentro del set de ajuste --
+exactamente lo que ECE con bins mide) -- esto NO es un efecto de pocas
+muestras que se reduciría con un dataset más grande: verificado con
+hasta 100.000 muestras sintéticas, el ECE en la propia muestra de
+ajuste sigue siendo de orden `1e-17`. La consecuencia real, honesta:
+la columna "ECE después" de `docs/calibration.md` prueba que el
+pipeline corre de punta a punta, no mide qué tan bien calibrado queda
+el modelo en datos nuevos -- eso requiere evaluar sobre un split
+separado del usado para ajustar (ver
+`models/tests/test_calibration.py::test_fit_isotonic_calibrator_improves_ece_on_a_known_miscalibration`).
+Se mantiene el diseño "ajustar y evaluar sobre el mismo set" porque es
+el que el enunciado pide explícitamente, con esta limitación
+documentada en vez de ocultada.
 
-## `CalibratedUNet` reutiliza el convenio de día 0 de `CellularAutomatonModel`
+## `CalibratedUNet` reutiliza el convenio de día 0 de `CellularAutomatonModel`, y predice de forma autorregresiva
 
 No es una decisión nueva -- `models/cellular_automata/model.py` ya
 estableció que el día 0 de `FireSpreadModel.predict()` es el estado
 conocido del propio evento (no hay "día -1"), y `models/evaluation/backtest.py`
 ya asume esa convención al comparar contra la verdad acumulada (ver la
 revisión final de `models/evaluation`, 2026-09-28). `CalibratedUNet`
-sigue exactamente el mismo convenio para que ambos modelos sean
-intercambiables ante el backtest, tal como pide el enunciado.
+sigue exactamente el mismo convenio de día 0.
+
+**Corrección de la revisión final del 2026-09-29**: la primera versión
+de `CalibratedUNet.predict` usaba "teacher forcing" -- alimentaba el
+`fire_mask` REAL (verdad de terreno) del día `d-1` para predecir el día
+`d`, en vez de su propia predicción anterior. Eso la convertía en un
+pronóstico de UN SOLO paso con acceso a información que
+`CellularAutomatonModel` (que evoluciona su propio estado de fuego
+desde el día 0, sin volver a leer verdad de terreno) nunca tiene --
+ambos modelos NO eran realmente intercambiables ante el backtest, pese
+a compartir el mismo convenio de día 0. `CalibratedUNet.predict` ahora
+reemplaza el canal `fire_mask` de cada día de entrada por su PROPIA
+predicción calibrada del día anterior (manteniendo el resto de los
+canales -- clima, terreno -- reales por día, igual que
+`CellularAutomatonModel` también consume viento/clima real por día).
+Esto sí hace a ambos modelos comparables de forma justa ante el
+backtest, tal como pide el enunciado.
 
 ## Fingerprint por contenido (sha256), no por metadata del checkpoint
 

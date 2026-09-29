@@ -409,16 +409,39 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   `docs/calibration.md` prueba que el pipeline funciona de punta a
   punta, no que el U-Net real está bien calibrado.
 - **Sin split de calibración separado del de validación** -- ver
-  `docs/decisions.md`. Con el fixture diminuto de `make calibrate`
-  (1024 celdas) esto produjo un ECE post-calibración de 0.0000 exacto
-  (sobreajuste del calibrador visible, no solo teórico). Con más datos
-  disponibles en el futuro, separar un split de calibración propio
-  evitaría este optimismo del ajuste isotónico sobre el mismo set que
-  reporta el "después".
+  `docs/decisions.md`. El ECE post-calibración de `make calibrate` da
+  0.0000 exacto (1024 celdas de fixture), y esto es estructural, NO un
+  artefacto de pocas muestras -- verificado con hasta 100.000 muestras
+  sintéticas, sigue siendo de orden `1e-17`. Agregar MÁS datos al mismo
+  set de ajuste-y-evaluación no reduce este efecto; solo evaluar sobre
+  un split de calibración SEPARADO del usado para ajustar lo haría. No
+  construido en este plan porque el enunciado pide explícitamente
+  ajustar y comparar "sobre el set de validación" (ver
+  `docs/decisions.md`).
 - **`CalibratedUNet` no valida `in_channels` contra el tensor de
   entrada antes de fallar** -- mismo patrón (y misma limitación
   todavía sin resolver) que `models/deep/train.py::finetune`, ya
   ledgeado en una revisión anterior.
+- **El día 0 de `CalibratedUNet.predict` y de `CellularAutomatonModel.predict`
+  no son bit-idénticos, pese a compartir el mismo convenio de "el día 0
+  es el ancla conocida"**: `CalibratedUNet` devuelve el `fire_mask`
+  real del día 0 sin modificar; `CellularAutomatonModel` (por cómo está
+  estructurado su bucle de simulación, `models/cellular_automata/simulate.py`,
+  ya revisado y aceptado en una revisión anterior) devuelve para el día
+  0 el ancla MÁS una capa de probabilidad de ignición hacia celdas
+  vecinas no quemadas -- un artefacto preexistente de esa simulación,
+  no introducido por esta revisión. La diferencia es pequeña (una sola
+  celda de margen) pero real; no se modificó el autómata celular ya
+  aceptado para "emparejar" este detalle.
+- **`_checkpoint_fingerprint` carga el checkpoint completo en memoria
+  para hashear su `state_dict`** (en vez de leer bytes del archivo en
+  streaming) -- razonable para los checkpoints diminutos de este
+  proyecto, pero costoso si algún día se usan checkpoints reales de
+  cientos de MB en la máquina sin GPU de `docs/model-card.md`.
+- **El CLI de calibración no soporta `--max-samples` para la ruta NDWS
+  real** (`--checkpoint` + `--shard-dir`), a diferencia de
+  `pyrocast-train pretrain`, que sí lo tiene por la misma razón (el
+  dataset NDWS completo pesa ~4.1 GB, ver `docs/model-card.md`).
 - **El CLI de calibración no soporta calibrar contra un set de
   validación real de eventos de Chile** -- solo fixture sintético o
   NDWS real (`--shard-dir`). Agregar esa ruta reutilizaría

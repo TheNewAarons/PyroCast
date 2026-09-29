@@ -6,13 +6,17 @@ contexto completo (enfoque, tabla antes/después) y el docstring de
 `shared.model_protocol.FireSpreadModel`.
 
 El calibrador se guarda junto a un checkpoint identificado por una
-huella (sha256 del archivo del checkpoint) -- cargar un calibrador
-verifica esa huella contra el checkpoint real antes de usarlo. Nunca
-se aplica un calibrador a un checkpoint distinto del que fue entrenado
-(el enunciado lo exige explícitamente): el fingerprint ata el
-calibrador a los PESOS exactos, no a una ejecución de calibración
-específica -- dos calibraciones distintas contra el mismo checkpoint
-son ambas válidas.
+huella (sha256 del `state_dict` del checkpoint, NO de los bytes crudos
+del archivo -- torch.save nombra las entradas de su zip según el
+nombre del archivo, así que hashear el archivo ataría la huella al
+NOMBRE, no a los pesos: guardar los mismos pesos como `last.pt` y
+`best.pt` en la misma época daría huellas distintas. Encontrado en la
+revisión final del 2026-09-29) -- cargar un calibrador verifica esa
+huella contra el checkpoint real antes de usarlo. Nunca se aplica un
+calibrador a un checkpoint distinto del que fue entrenado (el
+enunciado lo exige explícitamente): el fingerprint ata el calibrador a
+los PESOS exactos, no a una ejecución de calibración específica -- dos
+calibraciones distintas contra el mismo checkpoint son ambas válidas.
 """
 import hashlib
 from dataclasses import dataclass
@@ -43,7 +47,16 @@ class IncompatibleCalibratorError(RuntimeError):
 
 
 def _checkpoint_fingerprint(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # hashea el CONTENIDO del state_dict (nombre de parámetro + bytes
+    # del tensor, en orden determinista), no los bytes crudos del
+    # archivo -- ver docstring del módulo.
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint["model_state_dict"]
+    hasher = hashlib.sha256()
+    for key in sorted(state_dict.keys()):
+        hasher.update(key.encode("utf-8"))
+        hasher.update(state_dict[key].detach().cpu().numpy().tobytes())
+    return hasher.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -95,6 +108,22 @@ def _select_device() -> torch.device:
     return torch.device("cpu")
 
 
+def _require_finite(name: str, array: np.ndarray) -> None:
+    # mismo criterio que models/cellular_automata/simulate.py::_require_finite
+    # -- features/dataset/resample.py rellena huecos de cobertura con
+    # NaN (nunca fabrica un valor); sin este chequeo, un NaN de entrada
+    # se propaga en silencio a la predicción/calibración, y
+    # models/evaluation/backtest.py no lo detecta (las comparaciones
+    # con NaN son siempre False). Encontrado en la revisión final del
+    # 2026-09-29.
+    if not np.all(np.isfinite(array)):
+        bad = int(np.sum(~np.isfinite(array)))
+        raise ValueError(
+            f"{name} tiene {bad} celda(s) no finita(s) (NaN/inf) -- no se puede "
+            f"continuar con datos de entrada incompletos. Ver docs/limitations.md."
+        )
+
+
 def _collect_predictions(
     model: SmallUNet, val_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], device: torch.device
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -105,6 +134,7 @@ def _collect_predictions(
     with torch.no_grad():
         for i in range(len(val_dataset)):  # type: ignore[arg-type]
             x, y = val_dataset[i]
+            _require_finite(f"muestra {i} de val_dataset", x.numpy())
             logits = model(x.unsqueeze(0).to(device))
             probs = torch.sigmoid(logits).squeeze(0).squeeze(0).cpu().numpy()
             raw_probs_batches.append(probs.astype("float64").ravel())
@@ -156,8 +186,21 @@ class CalibratedUNet:
     convenio de día 0 que `models/cellular_automata/model.py`
     (CellularAutomatonModel): el día 0 de `predict()` es el estado
     conocido (`fire_mask` del propio evento en el día 0, no hay "día
-    -1" del que predecir), y los días `1..n-1` son la salida real del
-    modelo, calibrada si `calibration_path` fue dado."""
+    -1" del que predecir).
+
+    Días `1..n-1`: predicción AUTORREGRESIVA, no "teacher forcing".
+    Para predecir el día `d`, se usan los canales REALES del evento en
+    el día `d-1` (terreno, clima -- igual que CellularAutomatonModel,
+    que también consume viento/clima real por día) EXCEPTO el canal
+    `fire_mask`, que se reemplaza por la PROPIA predicción del modelo
+    para el día `d-1` (calibrada, si corresponde), no por el fire_mask
+    real observado. Sin esto, cada predicción sería un pronóstico "a un
+    día" con acceso al fire_mask real del día anterior -- mucho más
+    fácil que la propagación multi-día genuina que hace
+    CellularAutomatonModel evolucionando su propio estado desde el día
+    0, y ambos modelos NO serían intercambiables ante el backtest como
+    el enunciado exige. Encontrado en la revisión final del 2026-09-29
+    -- ver `test_calibrated_unet_predict_is_autoregressive_not_teacher_forced`."""
 
     def __init__(self, checkpoint_path: Path, calibration_path: Path | None = None) -> None:
         self.model, _optimizer_state, self.config = load_checkpoint(checkpoint_path)
@@ -180,15 +223,24 @@ class CalibratedUNet:
         output[0] = np.clip(event.values[0, fire_idx].astype("float64"), 0.0, 1.0)
 
         if n_days > 1:
-            inputs = torch.from_numpy(event.values[:-1].astype("float32")).to(self.device)
-            with torch.no_grad():
-                logits = self.model(inputs)
-            raw_probs = torch.sigmoid(logits).squeeze(1).cpu().numpy().astype("float64")
-            if self.calibrator is not None:
-                calibrated = self.calibrator.predict(raw_probs.ravel()).reshape(raw_probs.shape)
-                output[1:] = np.clip(calibrated, 0.0, 1.0)
-            else:
-                output[1:] = np.clip(raw_probs, 0.0, 1.0)
+            _require_finite("event", event.values[:-1])
+            current_fire_state = output[0].astype("float32")
+            for day in range(1, n_days):
+                day_input = event.values[day - 1].copy().astype("float32")
+                day_input[fire_idx] = current_fire_state
+                x = torch.from_numpy(day_input[np.newaxis]).to(self.device)
+                with torch.no_grad():
+                    logits = self.model(x)
+                raw_prob = (
+                    torch.sigmoid(logits).squeeze(0).squeeze(0).cpu().numpy().astype("float64")
+                )
+                if self.calibrator is not None:
+                    prob = self.calibrator.predict(raw_prob.ravel()).reshape(raw_prob.shape)
+                else:
+                    prob = raw_prob
+                prob = np.clip(prob, 0.0, 1.0)
+                output[day] = prob
+                current_fire_state = prob.astype("float32")
 
         return output
 
@@ -290,12 +342,22 @@ def run(
         calibration_path = default_calibration_path(checkpoint_path)
     elif checkpoint is not None and shard_dir is not None:
         checkpoint_path = checkpoint
+        if not checkpoint_path.exists():
+            typer.echo(f"No existe el checkpoint {checkpoint_path}.")
+            raise typer.Exit(code=1)
         shard_paths = sorted(shard_dir.glob("*.tfrecord*"))
         if not shard_paths:
             typer.echo(f"No se encontraron shards *.tfrecord* en {shard_dir}.")
             raise typer.Exit(code=1)
         split = split_public_dataset(shard_paths, seed=seed)
-        val_samples = list(load_public_dataset_samples(split["val"] or split["train"]))
+        if not split["val"]:
+            typer.echo(
+                f"El split de val de NDWS quedó vacío (solo {len(shard_paths)} shard(s) -- "
+                f"se necesitan al menos 2 para separar train/val). Sin val real no se "
+                f"puede reportar un antes/después honesto (ver docs/limitations.md)."
+            )
+            raise typer.Exit(code=1)
+        val_samples = list(load_public_dataset_samples(split["val"]))
         from models.deep.train import NDWSPretrainDataset
 
         val_dataset = NDWSPretrainDataset(val_samples)
