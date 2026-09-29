@@ -18,8 +18,14 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import torch
 from sklearn.isotonic import IsotonicRegression
+from torch.utils.data import Dataset
+
+from models.deep.checkpoint import load_checkpoint
+from models.deep.unet import SmallUNet
+from models.evaluation.metrics import brier_score, ece_score
 
 
 class IncompatibleCalibratorError(RuntimeError):
@@ -65,4 +71,73 @@ def load_calibration(path: Path, checkpoint_path: Path) -> CalibrationResult:
             f"real de {checkpoint_path} es {actual_fingerprint[:12]}... -- nunca "
             f"aplicar un calibrador a un checkpoint distinto del que fue entrenado."
         )
+    return result
+
+
+def _select_device() -> torch.device:
+    # duplicado deliberado de models/deep/train.py::_select_device --
+    # ambos son funciones de 4 líneas, y models/deep/train.py ya es la
+    # tercera copia de una convención similar en este proyecto (ver
+    # docs/limitations.md); un import de un símbolo privado (`_`) entre
+    # módulos sería peor acoplamiento que estas 4 líneas duplicadas.
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _collect_predictions(
+    model: SmallUNet, val_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], device: torch.device
+) -> tuple[np.ndarray, np.ndarray]:
+    model.eval()
+    model.to(device)
+    raw_probs_batches = []
+    targets_batches = []
+    with torch.no_grad():
+        for i in range(len(val_dataset)):  # type: ignore[arg-type]
+            x, y = val_dataset[i]
+            logits = model(x.unsqueeze(0).to(device))
+            probs = torch.sigmoid(logits).squeeze(0).squeeze(0).cpu().numpy()
+            raw_probs_batches.append(probs.astype("float64").ravel())
+            targets_batches.append(y.numpy().astype("float64").ravel())
+    raw_probs = np.concatenate(raw_probs_batches)
+    targets = np.concatenate(targets_batches)
+    return raw_probs, targets
+
+
+def fit_isotonic_calibrator(raw_probs: np.ndarray, targets: np.ndarray) -> IsotonicRegression:
+    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    calibrator.fit(raw_probs, targets)
+    return calibrator
+
+
+def calibrate_checkpoint(
+    checkpoint_path: Path,
+    val_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]],
+    calibration_path: Path | None = None,
+) -> CalibrationResult:
+    model, _optimizer_state, _config = load_checkpoint(checkpoint_path)
+    device = _select_device()
+
+    raw_probs, targets = _collect_predictions(model, val_dataset, device)
+    brier_before = brier_score(raw_probs, targets)
+    ece_before = ece_score(raw_probs, targets)
+
+    calibrator = fit_isotonic_calibrator(raw_probs, targets)
+    calibrated_probs = calibrator.predict(raw_probs)
+    brier_after = brier_score(calibrated_probs, targets)
+    ece_after = ece_score(calibrated_probs, targets)
+
+    result = CalibrationResult(
+        checkpoint_fingerprint=_checkpoint_fingerprint(checkpoint_path),
+        calibrator=calibrator, brier_before=brier_before, ece_before=ece_before,
+        brier_after=brier_after, ece_after=ece_after, n_samples=raw_probs.size,
+    )
+    path = (
+        calibration_path
+        if calibration_path is not None
+        else default_calibration_path(checkpoint_path)
+    )
+    save_calibration(path, result)
     return result
