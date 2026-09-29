@@ -282,23 +282,67 @@ def pretrain(
 _FINETUNE_LR_FACTOR = 0.1  # ver Global Constraints del plan: no se congela ninguna capa
 
 
+_SCRATCH_DEFAULT_LR = 1e-3  # mismo default que pretrain() -- sin checkpoint del que heredar.
+
+
 def finetune(
-    pretrained_checkpoint: Path = typer.Option(..., help="Checkpoint de pretrain (best.pt)"),
+    pretrained_checkpoint: Path | None = typer.Option(
+        None,
+        help=(
+            "Checkpoint de pretrain (best.pt). Si se omite, entrena un SmallUNet "
+            "desde cero directamente sobre los eventos de Chile -- camino explícito "
+            "para cuando no hay dataset público (NDWS/Kaggle) disponible para "
+            "preentrenar, ver docs/backtest-2026.md."
+        ),
+    ),
     run_dir: Path = typer.Option(Path("runs") / "finetune", help="Dónde guardar checkpoints/logs"),
     lr: float | None = typer.Option(
-        None, help="Learning rate -- por defecto, lr del checkpoint * 0.1"
+        None,
+        help=(
+            "Learning rate -- por defecto, lr del checkpoint * 0.1 si hay "
+            "--pretrained-checkpoint, o 1e-3 si se entrena desde cero"
+        ),
+    ),
+    base_channels: int = typer.Option(
+        16, help="Canales base de SmallUNet (solo aplica sin --pretrained-checkpoint)"
+    ),
+    depth: int = typer.Option(
+        3, help="Profundidad de SmallUNet (solo sin --pretrained-checkpoint)"
+    ),
+    focal_alpha: float = typer.Option(
+        0.8, help="Alpha de FocalLoss (solo sin --pretrained-checkpoint)"
+    ),
+    focal_gamma: float = typer.Option(
+        2.0, help="Gamma de FocalLoss (solo sin --pretrained-checkpoint)"
     ),
     batch_size: int = typer.Option(1, help="Tamaño de batch"),
     max_epochs: int = typer.Option(30, help="Épocas máximas"),
     patience: int = typer.Option(5, help="Épocas sin mejora antes de early stopping"),
     seed: int = typer.Option(42, help="Semilla de reproducibilidad"),
 ) -> None:
-    """Fine-tunea un checkpoint preentrenado sobre el split de train/val
-    de eventos de Chile (features/dataset/, ver docs/dataset-card.md).
-    No congela ninguna capa -- usa un learning rate más bajo en su
-    lugar (ver docs/model-card.md, sección de fine-tuning)."""
-    model, _optimizer_state, pretrained_config = load_checkpoint(pretrained_checkpoint)
-    effective_lr = lr if lr is not None else pretrained_config.lr * _FINETUNE_LR_FACTOR
+    """Entrena/afina un SmallUNet sobre el split de train/val de eventos
+    de Chile (features/dataset/, ver docs/dataset-card.md). Con
+    --pretrained-checkpoint, fine-tunea ese checkpoint (sin congelar
+    ninguna capa -- usa un learning rate más bajo en su lugar, ver
+    docs/model-card.md); sin él, entrena un SmallUNet nuevo desde cero
+    directamente sobre Chile."""
+    if pretrained_checkpoint is not None:
+        model, _optimizer_state, pretrained_config = load_checkpoint(pretrained_checkpoint)
+        effective_lr = lr if lr is not None else pretrained_config.lr * _FINETUNE_LR_FACTOR
+        effective_base_channels = pretrained_config.base_channels
+        effective_depth = pretrained_config.depth
+        effective_focal_alpha = pretrained_config.focal_alpha
+        effective_focal_gamma = pretrained_config.focal_gamma
+    else:
+        effective_lr = lr if lr is not None else _SCRATCH_DEFAULT_LR
+        effective_base_channels = base_channels
+        effective_depth = depth
+        effective_focal_alpha = focal_alpha
+        effective_focal_gamma = focal_gamma
+        model = SmallUNet(
+            in_channels=len(CHANNEL_ORDER), base_channels=effective_base_channels,
+            depth=effective_depth,
+        )
 
     settings = get_settings()
     dataset_dir = settings.data_processed_dir / "dataset"
@@ -320,12 +364,13 @@ def finetune(
     val_events = _load_chile_events(dataset_dir, splits["val"])
 
     config = TrainingConfig(
-        phase="finetune", in_channels=pretrained_config.in_channels,
-        base_channels=pretrained_config.base_channels, depth=pretrained_config.depth,
+        phase="finetune", in_channels=len(CHANNEL_ORDER),
+        base_channels=effective_base_channels, depth=effective_depth,
         lr=effective_lr, batch_size=batch_size, seed=seed,
-        focal_alpha=pretrained_config.focal_alpha, focal_gamma=pretrained_config.focal_gamma,
+        focal_alpha=effective_focal_alpha, focal_gamma=effective_focal_gamma,
         max_epochs=max_epochs, patience=patience,
-        data_paths=(str(dataset_dir),), pretrained_checkpoint=str(pretrained_checkpoint),
+        data_paths=(str(dataset_dir),),
+        pretrained_checkpoint=str(pretrained_checkpoint) if pretrained_checkpoint else None,
     )
     history = train_model(
         model, ChileFinetuneDataset(train_events), ChileFinetuneDataset(val_events),

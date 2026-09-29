@@ -155,3 +155,43 @@ def test_finetune_cli_inherits_architecture_from_the_pretrained_checkpoint(tmp_p
     assert finetuned_config.phase == "finetune"
     assert finetuned_config.lr == 1e-2 * 0.1  # ver _FINETUNE_LR_FACTOR
     get_settings.cache_clear()
+
+
+def test_finetune_cli_trains_from_scratch_without_a_pretrained_checkpoint(tmp_path, monkeypatch):
+    # El usuario eligió explícitamente "sin preentrenamiento, solo
+    # fine-tuning en Chile" (sin credenciales de Kaggle/NDWS
+    # disponibles, ver docs/backtest-2026.md) -- finetune() debía
+    # exigir SIEMPRE un checkpoint preentrenado, dejando este camino sin
+    # forma de entrenar un U-Net solo con eventos reales de Chile.
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+
+    dataset_dir = tmp_path / "data" / "processed" / "dataset"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "splits.json").write_text(json.dumps({"train": [1, 2], "val": [3]}))
+    for event_id in (1, 2, 3):
+        _make_chile_event_for_cli(event_id).to_dataset().to_zarr(
+            dataset_dir / f"event_{event_id:04d}.zarr", mode="w"
+        )
+
+    run_dir = tmp_path / "scratch_run"
+    result = runner.invoke(
+        app,
+        [
+            "finetune", "--run-dir", str(run_dir), "--max-epochs", "1", "--patience", "1",
+            "--base-channels", "8", "--depth", "1", "--lr", "1e-2",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    _loaded_model, _opt_state, config = load_checkpoint(run_dir / "best.pt")
+    assert config.base_channels == 8
+    assert config.depth == 1
+    assert config.phase == "finetune"
+    assert config.pretrained_checkpoint is None
+    assert config.lr == 1e-2
+    get_settings.cache_clear()
