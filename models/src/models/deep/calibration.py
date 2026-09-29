@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import xarray as xr
 from sklearn.isotonic import IsotonicRegression
 from torch.utils.data import Dataset
 
@@ -141,3 +142,45 @@ def calibrate_checkpoint(
     )
     save_calibration(path, result)
     return result
+
+
+class CalibratedUNet:
+    """Implementa `shared.model_protocol.FireSpreadModel` -- mismo
+    convenio de día 0 que `models/cellular_automata/model.py`
+    (CellularAutomatonModel): el día 0 de `predict()` es el estado
+    conocido (`fire_mask` del propio evento en el día 0, no hay "día
+    -1" del que predecir), y los días `1..n-1` son la salida real del
+    modelo, calibrada si `calibration_path` fue dado."""
+
+    def __init__(self, checkpoint_path: Path, calibration_path: Path | None = None) -> None:
+        self.model, _optimizer_state, self.config = load_checkpoint(checkpoint_path)
+        self.model.eval()
+        self.device = _select_device()
+        self.model.to(self.device)
+
+        self.calibrator: IsotonicRegression | None = None
+        if calibration_path is not None:
+            calibration = load_calibration(calibration_path, checkpoint_path)
+            self.calibrator = calibration.calibrator
+
+    def predict(self, event: xr.DataArray) -> np.ndarray:
+        channels = list(event.coords["channel"].values)
+        fire_idx = channels.index("fire_mask")
+        n_days = event.sizes["day"]
+        height, width = event.sizes["y"], event.sizes["x"]
+
+        output = np.zeros((n_days, height, width), dtype="float64")
+        output[0] = np.clip(event.values[0, fire_idx].astype("float64"), 0.0, 1.0)
+
+        if n_days > 1:
+            inputs = torch.from_numpy(event.values[:-1].astype("float32")).to(self.device)
+            with torch.no_grad():
+                logits = self.model(inputs)
+            raw_probs = torch.sigmoid(logits).squeeze(1).cpu().numpy().astype("float64")
+            if self.calibrator is not None:
+                calibrated = self.calibrator.predict(raw_probs.ravel()).reshape(raw_probs.shape)
+                output[1:] = np.clip(calibrated, 0.0, 1.0)
+            else:
+                output[1:] = np.clip(raw_probs, 0.0, 1.0)
+
+        return output

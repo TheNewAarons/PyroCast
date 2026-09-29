@@ -197,3 +197,111 @@ def test_calibrate_checkpoint_reports_before_and_after_on_the_val_set(tmp_path):
     assert 0.0 <= result.ece_after <= 1.0
     assert result.n_samples > 0
     assert (tmp_path / "cal.pt").exists()
+
+
+def test_calibrated_unet_satisfies_the_fire_spread_model_protocol(tmp_path):
+    from models.deep.calibration import CalibratedUNet
+    from shared.model_protocol import FireSpreadModel
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=1)
+    model = CalibratedUNet(checkpoint)
+    assert isinstance(model, FireSpreadModel)
+
+
+def test_calibrated_unet_predict_seeds_day_zero_from_the_known_fire_mask(tmp_path):
+    # mismo convenio que CellularAutomatonModel (models/cellular_automata/model.py):
+    # el día 0 es el ancla conocida, no una predicción real.
+    from models.deep.calibration import CalibratedUNet
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=1)
+    model = CalibratedUNet(checkpoint)
+
+    event = _make_public_samples(seed=5, n=1)[0].tensor
+    # día 0 real de la muestra sintética -- forzamos un valor conocido.
+    fire_idx = list(CHANNEL_ORDER).index("fire_mask")
+    event.values[0, fire_idx] = 0.0
+    event.values[0, fire_idx, 0, 0] = 1.0
+
+    result = model.predict(event)
+    assert result.shape == (1, event.sizes["y"], event.sizes["x"])
+    assert result[0, 0, 0] == 1.0
+    assert result[0, 1, 1] == 0.0
+
+
+def test_calibrated_unet_predict_handles_a_single_day_event_without_a_forward_pass(tmp_path):
+    # Review Focus del plan: n_days=1 no debe intentar correr el modelo
+    # sobre un batch vacío.
+    from models.deep.calibration import CalibratedUNet
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=1)
+    model = CalibratedUNet(checkpoint)
+    event = _make_public_samples(seed=6, n=1)[0].tensor  # day dim size 1
+    result = model.predict(event)
+    assert result.shape == (1, event.sizes["y"], event.sizes["x"])
+
+
+def test_calibrated_unet_predict_produces_multi_day_output_matching_event_shape(tmp_path):
+    from models.deep.calibration import CalibratedUNet
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=1)
+    model = CalibratedUNet(checkpoint)
+
+    size = 8
+    data = np.random.default_rng(7).random((3, len(CHANNEL_ORDER), size, size)).astype("float32")
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={
+            "day": ["2026-01-01", "2026-01-02", "2026-01-03"],
+            "channel": list(CHANNEL_ORDER),
+        },
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 1},
+    )
+    result = model.predict(event)
+    assert result.shape == (3, size, size)
+    assert np.all((result >= 0.0) & (result <= 1.0))
+
+
+def test_calibrated_unet_uses_the_calibrator_when_one_is_provided(tmp_path):
+    from models.deep.calibration import CalibratedUNet, calibrate_checkpoint
+    from models.deep.train import NDWSPretrainDataset
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=1)
+    val_dataset = NDWSPretrainDataset(_make_public_samples(seed=20, n=4))
+    calibration_path = tmp_path / "cal.pt"
+    calibrate_checkpoint(checkpoint, val_dataset, calibration_path=calibration_path)
+
+    raw_model = CalibratedUNet(checkpoint)
+    calibrated_model = CalibratedUNet(checkpoint, calibration_path=calibration_path)
+
+    event = _make_public_samples(seed=30, n=1)[0].tensor
+    # forzar > 1 día para tener al menos una celda de predicción real
+    event = xr.concat([event, event], dim="day")
+    event = event.assign_coords(day=["2026-01-01", "2026-01-02"])
+
+    raw_output = raw_model.predict(event)
+    calibrated_output = calibrated_model.predict(event)
+    # el calibrador es una transformación monótona no trivial (ver
+    # fit sobre datos aleatorios) -- el día 1 (predicho, no ancla) casi
+    # seguro difiere entre ambos, salvo coincidencia exacta.
+    assert not np.array_equal(raw_output[1], calibrated_output[1])
+
+
+def test_calibrated_unet_rejects_a_calibrator_from_a_different_checkpoint(tmp_path):
+    from models.deep.calibration import CalibratedUNet, calibrate_checkpoint
+    from models.deep.train import NDWSPretrainDataset
+
+    checkpoint_a = tmp_path / "a.pt"
+    checkpoint_b = tmp_path / "b.pt"
+    _make_checkpoint_for_channel_order(checkpoint_a, seed=1)
+    _make_checkpoint_for_channel_order(checkpoint_b, seed=2)
+    val_dataset = NDWSPretrainDataset(_make_public_samples(seed=40, n=4))
+    calibration_for_a = tmp_path / "a.calibrator.pt"
+    calibrate_checkpoint(checkpoint_a, val_dataset, calibration_path=calibration_for_a)
+
+    with pytest.raises(IncompatibleCalibratorError, match="checkpoint"):
+        CalibratedUNet(checkpoint_b, calibration_path=calibration_for_a)
