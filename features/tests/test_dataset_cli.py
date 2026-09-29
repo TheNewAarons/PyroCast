@@ -31,6 +31,82 @@ def _det(lat: float, lon: float, at: dt.datetime) -> FireDetection:
     )
 
 
+def test_build_dataset_cli_event_ids_filters_to_only_those_events(tmp_path, monkeypatch):
+    # Un backtest contra eventos reales elegidos a mano (p. ej. por
+    # cantidad de detecciones) necesita procesar SOLO esos eventos, no
+    # todos los que caigan en el rango de fechas -- un rango de fechas
+    # real de temporada completa cluster iza en cientos/miles de eventos,
+    # la enorme mayoría ruido de 1-2 detecciones. Sin este filtro no hay
+    # forma reproducible de acotar `build-dataset` a un subconjunto real
+    # elegido explícitamente (ver docs/backtest-2026.md).
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    at = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+    # Dos detecciones muy separadas espacialmente -- dos eventos distintos.
+    fixture_detections = [_det(-38.0, -72.5, at), _det(-36.6, -71.0, at)]
+    monkeypatch.setattr(
+        "features.cli.load_firms_detections", lambda base_dir, start, end: fixture_detections
+    )
+
+    from features.fire_state.clustering import build_fire_events
+
+    real_events = build_fire_events(fixture_detections)
+    assert len(real_events) == 2
+    keep_event_id = real_events[0].event_id
+
+    def fake_resolve_event_sources(days, settings_arg):
+        processed = settings_arg.data_processed_dir
+        size = 20
+        transform = from_origin(190000, 5791000, 250, 250)
+        for subdir, name in [
+            ("dem", "dem_x.tif"), ("terrain", "slope_deg.tif"), ("terrain", "aspect_deg.tif"),
+            ("vegetation", "fuel_type.tif"), ("vegetation", "ndvi_2026-01.tif"),
+        ]:
+            path = processed / subdir / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with rasterio.open(
+                path, "w", driver="GTiff", height=size, width=size, count=1,
+                dtype="float32", crs="EPSG:32719", transform=transform, nodata=-9999.0,
+            ) as dst:
+                dst.write(np.ones((size, size), dtype="float32"), 1)
+
+        from features.dataset.pipeline import EventSources
+
+        return EventSources(
+            elevation_path=processed / "dem" / "dem_x.tif",
+            slope_path=processed / "terrain" / "slope_deg.tif",
+            aspect_path=processed / "terrain" / "aspect_deg.tif",
+            fuel_type_path=processed / "vegetation" / "fuel_type.tif",
+            ndvi_paths_by_month={"2026-01": processed / "vegetation" / "ndvi_2026-01.tif"},
+            weather_paths_by_day={},
+        )
+
+    monkeypatch.setattr("features.cli.resolve_event_sources", fake_resolve_event_sources)
+    monkeypatch.setattr("features.cli.persist_fire_event_metadata", lambda **kwargs: 1)
+
+    result = runner.invoke(
+        app,
+        [
+            "build-dataset", "--start", "2026-01-10", "--end", "2026-01-15",
+            "--event-ids", str(keep_event_id),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    dataset_dir = settings.data_processed_dir / "dataset"
+    zarr_dirs = list(dataset_dir.glob("event_*.zarr"))
+    assert len(zarr_dirs) == 1
+    assert zarr_dirs[0].stem == f"event_{keep_event_id}"
+    get_settings.cache_clear()
+
+
 def test_build_dataset_cli_produces_at_least_one_zarr_event(tmp_path, monkeypatch):
     for key, value in REQUIRED_ENV.items():
         monkeypatch.setenv(key, value)

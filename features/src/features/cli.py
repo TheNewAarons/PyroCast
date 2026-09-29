@@ -25,11 +25,32 @@ def _callback() -> None:
     """CLI de features de PyroCast."""
 
 
+def _parse_event_ids(value: str) -> frozenset[int]:
+    try:
+        return frozenset(int(part) for part in value.split(","))
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"event-ids debe ser una lista de enteros separados por coma: {exc}"
+        ) from exc
+
+
 def build_dataset(
     start: dt.datetime = typer.Option(
         ..., formats=["%Y-%m-%d"], help="Fecha de inicio (YYYY-MM-DD)"
     ),
     end: dt.datetime = typer.Option(..., formats=["%Y-%m-%d"], help="Fecha de fin (YYYY-MM-DD)"),
+    event_ids_filter: str | None = typer.Option(
+        None,
+        "--event-ids",
+        help=(
+            "IDs de evento separados por coma -- si se pasa, procesa SOLO esos "
+            "eventos entre los clusterizados en el rango de fechas, en vez de "
+            "todos. Un rango de fechas real de temporada completa clusteriza en "
+            "cientos o miles de eventos, la mayoría ruido de 1-2 detecciones; "
+            "este filtro permite acotar a un subconjunto elegido explícitamente "
+            "(p. ej. por cantidad de detecciones) de forma reproducible."
+        ),
+    ),
 ) -> None:
     """Ensambla el dataset espaciotemporal por evento (P2-P6): clusteriza
     detecciones FIRMS ya ingeridas en eventos, arma el tensor de cada uno
@@ -41,6 +62,9 @@ def build_dataset(
 
     detections = load_firms_detections(settings.data_raw_dir, start.date(), end.date())
     events = build_fire_events(detections)
+    if event_ids_filter is not None:
+        wanted = _parse_event_ids(event_ids_filter)
+        events = [event for event in events if event.event_id in wanted]
     if not events:
         typer.echo("No se encontraron eventos de incendio en el rango pedido.")
         raise typer.Exit(code=0)
