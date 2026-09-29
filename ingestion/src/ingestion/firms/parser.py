@@ -7,11 +7,19 @@ from shared.schemas import FireDetection
 
 
 def _parse_detected_at(acq_date: str, acq_time: str) -> dt.datetime:
-    # acq_time viene como "HHMM" sin separador, con cero a la izquierda
-    # (p. ej. "0005" = 00:05 UTC) — NO tratar como entero, se pierde el
-    # cero inicial.
-    hour = int(acq_time[:2])
-    minute = int(acq_time[2:])
+    # acq_time representa "HHMM" sin separador -- PERO el Area API de
+    # FIRMS lo serializa como campo NUMÉRICO, no como texto de ancho
+    # fijo: los ceros a la izquierda se pierden ("517" en el CSV real
+    # significa 05:17 UTC, "5" significa 00:05 UTC). Verificado contra
+    # una respuesta real de VIIRS_SNPP_SP (revisión final del
+    # 2026-09-29) -- el comentario anterior de este archivo asumía "sí
+    # viene con cero a la izquierda" sin haberlo confirmado contra datos
+    # reales, y fallaba con "hour must be in 0..23" apenas se usó con
+    # una descarga real en vez de fixtures. zfill(4) restaura el ancho
+    # fijo antes de cortar HH/MM.
+    padded = acq_time.zfill(4)
+    hour = int(padded[:2])
+    minute = int(padded[2:])
     date = dt.date.fromisoformat(acq_date)
     return dt.datetime(date.year, date.month, date.day, hour, minute, tzinfo=dt.UTC)
 
