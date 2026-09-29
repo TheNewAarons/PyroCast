@@ -91,6 +91,49 @@ def test_backtest_cli_writes_bench_results_json(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_load_test_events_trims_leading_padding_days_with_no_fire(tmp_path, monkeypatch):
+    # padded_days_for_event (features/dataset/pipeline.py) antepone
+    # DEFAULT_PRE_EVENT_PADDING_DAYS=5 días SIN fuego antes del primer
+    # día real del evento -- el día 0 del tensor resultante NO tiene
+    # ninguna celda en llamas. Pero tanto CalibratedUNet.predict como
+    # CellularAutomatonModel.predict asumen que el día 0 es "el ancla
+    # conocida" (el estado ACTUAL del fuego del que hay que propagar):
+    # sin recortar el padding, ambos modelos parten de "nada ardiendo"
+    # y no tienen forma de anticipar la ignición real que recién ocurre
+    # más adelante -- un desajuste del PROTOCOLO de evaluación, no una
+    # limitación de ningún modelo en particular. Verificado contra
+    # datos reales de docs/backtest-2026.md (event_2582836092: 5 días
+    # de padding sin fuego, IoU=Dice=0.0 para AMBOS modelos).
+    from models.cli import load_test_events
+
+    monkeypatch.chdir(tmp_path)
+    size, n_days = 6, 7
+    data = np.zeros((n_days, len(_CHANNEL_ORDER), size, size), dtype="float32")
+    data[:, _CHANNEL_ORDER.index("fuel_type"), :, :] = 1.0
+    fire_idx = _CHANNEL_ORDER.index("fire_mask")
+    # días 0-1: padding, sin fuego. día 2 en adelante: fuego real.
+    data[2:, fire_idx, size // 2, size // 2] = 1.0
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={
+            "day": [f"2026-01-{d + 1:02d}" for d in range(n_days)],
+            "channel": list(_CHANNEL_ORDER),
+        },
+        name="fire_event_tensor",
+        attrs={"event_id": 1, "resolution_m": 100.0},
+    )
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    event.to_dataset().to_zarr(dataset_dir / "event_0001.zarr", mode="w")
+    (dataset_dir / "splits.json").write_text(json.dumps({"test": [1]}))
+
+    events = load_test_events(dataset_dir)
+    assert len(events) == 1
+    trimmed = events[0]
+    assert trimmed.sizes["day"] == 5  # 7 días - 2 de padding sin fuego
+    assert trimmed.values[0, fire_idx].sum() > 0  # el nuevo día 0 SÍ tiene fuego
+
+
 def test_backtest_cli_help_does_not_claim_the_default_ca_model_is_calibrated(monkeypatch):
     # el default (cellular_automata) sigue sin calibrar contra
     # incendios reales -- ver docs/limitations.md. --model unet SÍ es
