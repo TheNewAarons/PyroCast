@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 pyrocast-models = "models.cli:app"
 pyrocast-train = "models.deep.train:app"
+pyrocast-calibrate = "models.deep.calibration:app"
 
 [tool.uv.sources]
 shared = { workspace = true }

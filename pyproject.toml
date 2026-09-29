@@ -31,6 +31,9 @@ select = ["E", "F", "I", "UP", "B"]
 # as the training loop (by explicit request) rather than a separate
 # cli.py — same Typer B008 exemption applies for the same reason.
 "models/src/models/deep/train.py" = ["B008"]
+# models/deep/calibration.py bundles the pyrocast-calibrate CLI the
+# same way — same Typer B008 exemption, same reason.
+"models/src/models/deep/calibration.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

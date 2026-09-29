@@ -20,11 +20,18 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import typer
 import xarray as xr
+from features.dataset.assemble import CHANNEL_ORDER
 from sklearn.isotonic import IsotonicRegression
 from torch.utils.data import Dataset
 
-from models.deep.checkpoint import load_checkpoint
+from models.deep.checkpoint import TrainingConfig, load_checkpoint
+from models.deep.public_dataset import (
+    PublicDatasetSample,
+    load_public_dataset_samples,
+    split_public_dataset,
+)
 from models.deep.unet import SmallUNet
 from models.evaluation.metrics import brier_score, ece_score
 
@@ -184,3 +191,122 @@ class CalibratedUNet:
                 output[1:] = np.clip(raw_probs, 0.0, 1.0)
 
         return output
+
+
+app = typer.Typer()
+
+
+@app.callback()
+def _callback() -> None:
+    """CLI de calibración isotónica del U-Net de PyroCast."""
+
+
+def _build_fixture_checkpoint(run_dir: Path, seed: int = 42) -> Path:
+    # el MISMO train_model de P10 entrena este checkpoint -- es
+    # literalmente "el checkpoint de fixture de P10" que el enunciado
+    # pide, no una imitación local del entrenamiento.
+    from models.deep.train import NDWSPretrainDataset, set_seed, train_model
+
+    set_seed(seed)
+    size = 16
+    n_channels = len(CHANNEL_ORDER)
+    fire_idx = CHANNEL_ORDER.index("fire_mask")
+
+    def make_sample(sample_id: int) -> PublicDatasetSample:
+        rng = np.random.default_rng(sample_id)
+        data = rng.random((1, n_channels, size, size)).astype("float32")
+        data[0, fire_idx] = (rng.random((size, size)) > 0.8).astype("float32")
+        tensor = xr.DataArray(
+            data, dims=("day", "channel", "y", "x"),
+            coords={"day": ["1970-01-01"], "channel": list(CHANNEL_ORDER)},
+            name="fire_event_tensor", attrs={"resolution_m": 1000.0, "event_id": sample_id},
+        )
+        next_mask = (rng.random((size, size)) > 0.8).astype("float64")
+        return PublicDatasetSample(tensor=tensor, next_day_fire_mask=next_mask)
+
+    samples = [make_sample(i) for i in range(8)]
+    config = TrainingConfig(
+        phase="pretrain", in_channels=n_channels, base_channels=8, depth=2, lr=1e-2,
+        batch_size=2, seed=seed, focal_alpha=0.8, focal_gamma=2.0, max_epochs=2, patience=2,
+        data_paths=("synthetic-calibration-fixture",), pretrained_checkpoint=None,
+    )
+    model = SmallUNet(in_channels=n_channels, base_channels=8, depth=2)
+    train_model(
+        model, NDWSPretrainDataset(samples[:6]), NDWSPretrainDataset(samples[6:]),
+        config, run_dir,
+    )
+    return run_dir / "best.pt"
+
+
+def _build_fixture_val_dataset(seed: int) -> "Dataset[tuple[torch.Tensor, torch.Tensor]]":
+    from models.deep.train import NDWSPretrainDataset
+
+    size = 16
+    n_channels = len(CHANNEL_ORDER)
+
+    def make_sample(sample_id: int) -> PublicDatasetSample:
+        rng = np.random.default_rng(sample_id)
+        data = rng.random((1, n_channels, size, size)).astype("float32")
+        tensor = xr.DataArray(
+            data, dims=("day", "channel", "y", "x"),
+            coords={"day": ["1970-01-01"], "channel": list(CHANNEL_ORDER)},
+            name="fire_event_tensor", attrs={"resolution_m": 1000.0, "event_id": sample_id},
+        )
+        next_mask = (np.random.default_rng(sample_id + 1000).random((size, size)) > 0.8).astype(
+            "float64"
+        )
+        return PublicDatasetSample(tensor=tensor, next_day_fire_mask=next_mask)
+
+    samples = [make_sample(seed + 100 + i) for i in range(4)]
+    return NDWSPretrainDataset(samples)
+
+
+def _echo_report(result: CalibrationResult) -> None:
+    typer.echo(f"Muestras evaluadas: {result.n_samples}")
+    typer.echo(f"Brier -- antes: {result.brier_before:.4f}  después: {result.brier_after:.4f}")
+    typer.echo(f"ECE   -- antes: {result.ece_before:.4f}  después: {result.ece_after:.4f}")
+
+
+def run(
+    fixture: bool = typer.Option(
+        False, help="Entrena y calibra un checkpoint sintético diminuto"
+    ),
+    checkpoint: Path | None = typer.Option(
+        None, help="Checkpoint real a calibrar (requiere --shard-dir)"
+    ),
+    shard_dir: Path | None = typer.Option(
+        None, help="Shards NDWS para el set de validación real"
+    ),
+    run_dir: Path = typer.Option(
+        Path("runs") / "calibration", help="Dónde guardar checkpoint/calibrador de fixture"
+    ),
+    seed: int = typer.Option(42, help="Semilla de reproducibilidad"),
+) -> None:
+    """Calibra un checkpoint de SmallUNet con regresión isotónica y
+    reporta Brier/ECE antes y después sobre el set de validación."""
+    if fixture:
+        checkpoint_path = _build_fixture_checkpoint(run_dir, seed=seed)
+        val_dataset = _build_fixture_val_dataset(seed=seed)
+        calibration_path = default_calibration_path(checkpoint_path)
+    elif checkpoint is not None and shard_dir is not None:
+        checkpoint_path = checkpoint
+        shard_paths = sorted(shard_dir.glob("*.tfrecord*"))
+        if not shard_paths:
+            typer.echo(f"No se encontraron shards *.tfrecord* en {shard_dir}.")
+            raise typer.Exit(code=1)
+        split = split_public_dataset(shard_paths, seed=seed)
+        val_samples = list(load_public_dataset_samples(split["val"] or split["train"]))
+        from models.deep.train import NDWSPretrainDataset
+
+        val_dataset = NDWSPretrainDataset(val_samples)
+        calibration_path = default_calibration_path(checkpoint_path)
+    else:
+        typer.echo("Usar --fixture, o --checkpoint junto con --shard-dir.")
+        raise typer.Exit(code=1)
+
+    result = calibrate_checkpoint(checkpoint_path, val_dataset, calibration_path=calibration_path)
+    _echo_report(result)
+    typer.echo(f"Calibrador guardado en {calibration_path}")
+
+
+app.command("run")(run)

@@ -48,7 +48,7 @@ train:
 	uv run --package models pyrocast-train smoke-test
 
 calibrate:
-	@echo "pendiente: models/evaluation (calibración isotónica) aún no implementado"
+	uv run --package models pyrocast-calibrate run --fixture
 
 backtest:
 	uv run --package models pyrocast-models backtest
