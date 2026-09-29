@@ -979,3 +979,37 @@ completa (un `Dataset` perezoso indexado por posición de archivo)
 requeriría escanear los shards TFRecord una vez para construir un
 índice de offsets de registro, fuera del alcance de este plan (ver
 `docs/limitations.md`).
+
+## Calibración isotónica se ajusta y evalúa sobre el MISMO set de validación
+
+No hay un split de calibración separado del de validación -- el
+enunciado pide explícitamente ajustar "contra las frecuencias
+observadas en el set de validación" y comparar "sobre el set de
+validación", y un split adicional reduciría aún más un set de
+validación ya pequeño en este proyecto. Encaja con la práctica estándar
+para datasets chicos: el riesgo de sobreajustar el calibrador (que solo
+tiene la forma monótona por grados de libertad de un ajuste isotónico,
+muy pocos parámetros efectivos comparado con la red) es bajo con
+datasets reales de tamaño razonable -- aunque con el fixture sintético
+diminuto de `make calibrate` (1024 celdas) el efecto es visible y real
+(ECE después = 0.0000, ver `docs/calibration.md`), no solo teórico.
+
+## `CalibratedUNet` reutiliza el convenio de día 0 de `CellularAutomatonModel`
+
+No es una decisión nueva -- `models/cellular_automata/model.py` ya
+estableció que el día 0 de `FireSpreadModel.predict()` es el estado
+conocido del propio evento (no hay "día -1"), y `models/evaluation/backtest.py`
+ya asume esa convención al comparar contra la verdad acumulada (ver la
+revisión final de `models/evaluation`, 2026-09-28). `CalibratedUNet`
+sigue exactamente el mismo convenio para que ambos modelos sean
+intercambiables ante el backtest, tal como pide el enunciado.
+
+## Fingerprint por contenido (sha256), no por metadata del checkpoint
+
+Se consideró identificar un checkpoint por su `TrainingConfig` (fase,
+hiperparámetros) en vez de por el hash de sus bytes -- se descartó
+porque dos entrenamientos con los MISMOS hiperparámetros producen
+pesos distintos (inicialización aleatoria, orden de datos), y el
+enunciado exige explícitamente que un calibrador nunca se aplique "a
+un checkpoint distinto del que fue entrenado" -- el contenido exacto
+de los pesos es lo único que identifica eso sin ambigüedad.

@@ -402,6 +402,29 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   irrelevante (cada batch es una muestra), pero con un `batch_size`
   mayor y un dataset cuyo tamaño no es múltiplo exacto, el último batch
   (más chico) pesa lo mismo que los demás en el promedio.
+- **La calibración de esta sesión se corrió únicamente sobre un
+  checkpoint de fixture sintético** (`pyrocast-calibrate run
+  --fixture`) -- ningún checkpoint real entrenado sobre NDWS o eventos
+  de Chile fue calibrado todavía. La tabla antes/después de
+  `docs/calibration.md` prueba que el pipeline funciona de punta a
+  punta, no que el U-Net real está bien calibrado.
+- **Sin split de calibración separado del de validación** -- ver
+  `docs/decisions.md`. Con el fixture diminuto de `make calibrate`
+  (1024 celdas) esto produjo un ECE post-calibración de 0.0000 exacto
+  (sobreajuste del calibrador visible, no solo teórico). Con más datos
+  disponibles en el futuro, separar un split de calibración propio
+  evitaría este optimismo del ajuste isotónico sobre el mismo set que
+  reporta el "después".
+- **`CalibratedUNet` no valida `in_channels` contra el tensor de
+  entrada antes de fallar** -- mismo patrón (y misma limitación
+  todavía sin resolver) que `models/deep/train.py::finetune`, ya
+  ledgeado en una revisión anterior.
+- **El CLI de calibración no soporta calibrar contra un set de
+  validación real de eventos de Chile** -- solo fixture sintético o
+  NDWS real (`--shard-dir`). Agregar esa ruta reutilizaría
+  `models/deep/train.py::_load_chile_events` (o duplicaría su
+  convención una cuarta vez) -- deliberadamente fuera de alcance de
+  este plan, ver `docs/decisions.md`.
 
 ## Herramienta de investigación
 
