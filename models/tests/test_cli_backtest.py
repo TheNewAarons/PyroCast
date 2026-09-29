@@ -2,6 +2,7 @@
 Postgres real, sin Zarr real -- eventos de fixture inyectados, pero el
 backtest y la escritura de bench/results corren de verdad."""
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -90,9 +91,97 @@ def test_backtest_cli_writes_bench_results_json(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
-def test_backtest_cli_help_does_not_claim_the_model_is_calibrated(monkeypatch):
+def test_backtest_cli_help_does_not_claim_the_default_ca_model_is_calibrated(monkeypatch):
+    # el default (cellular_automata) sigue sin calibrar contra
+    # incendios reales -- ver docs/limitations.md. --model unet SÍ es
+    # calibrado (P11), y el help lo dice; esta aserción es específica
+    # a la frase que describe el autómata celular, no al texto entero.
     for key, value in REQUIRED_ENV.items():
         monkeypatch.setenv(key, value)
     result = runner.invoke(app, ["backtest", "--help"])
     assert result.exit_code == 0, result.output
-    assert "calibrado" not in result.output.lower()
+    assert "sin calibrar" in result.output.lower()
+
+
+def test_backtest_cli_records_the_exact_command_and_git_commit(tmp_path, monkeypatch):
+    # docs/backtest-2026.md exige que los resultados en bench/results/
+    # queden reproducibles por otra persona: el comando exacto usado y
+    # el commit de git con el que se generaron.
+    import subprocess
+
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+
+    fixture_events = [_fixture_event(1), _fixture_event(2)]
+    monkeypatch.setattr("models.cli.load_test_events", lambda dataset_dir: fixture_events)
+    monkeypatch.setattr("models.cli.persist_backtest_run", lambda **kwargs: [1, 2])
+
+    result = runner.invoke(app, ["backtest", "--n-bootstrap", "50"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads((tmp_path / "bench" / "results" / "baseline.json").read_text())
+    assert "backtest" in payload["command"]
+    expected_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert payload["git_commit"] == expected_commit
+    get_settings.cache_clear()
+
+
+def test_backtest_cli_supports_the_unet_model(tmp_path, monkeypatch):
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(tmp_path)
+
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+
+    fixture_events = [_fixture_event(1), _fixture_event(2)]
+    monkeypatch.setattr("models.cli.load_test_events", lambda dataset_dir: fixture_events)
+    monkeypatch.setattr("models.cli.persist_backtest_run", lambda **kwargs: [1, 2])
+
+    class _FakeCalibratedUNet:
+        def __init__(self, checkpoint_path, calibration_path=None):
+            self.checkpoint_path = checkpoint_path
+            self.calibration_path = calibration_path
+
+        def predict(self, event):
+            return np.zeros(
+                (event.sizes["day"], event.sizes["y"], event.sizes["x"]), dtype="float64"
+            )
+
+    monkeypatch.setattr("models.cli.CalibratedUNet", _FakeCalibratedUNet)
+
+    checkpoint_path = tmp_path / "model.pt"
+    checkpoint_path.write_bytes(b"fake")
+
+    result = runner.invoke(
+        app,
+        [
+            "backtest", "--model", "unet", "--checkpoint", str(checkpoint_path),
+            "--n-bootstrap", "50",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    results_path = tmp_path / "bench" / "results" / "unet.json"
+    assert results_path.exists()
+    payload = json.loads(results_path.read_text())
+    assert payload["model_name"] == "unet"
+    assert len(payload["per_event"]) == 2
+    get_settings.cache_clear()
+
+
+def test_backtest_cli_unet_model_requires_a_checkpoint(monkeypatch):
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    result = runner.invoke(app, ["backtest", "--model", "unet"])
+    assert result.exit_code == 1
+    assert "checkpoint" in result.output.lower()
