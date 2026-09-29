@@ -40,8 +40,8 @@ class _FakeDataCube:
         self._log.append(("reduce_dimension", dimension, reducer))
         return self
 
-    def download(self, target: str) -> None:
-        self._log.append(("download", target))
+    def download(self, target: str, format: str | None = None) -> None:  # noqa: A002
+        self._log.append(("download", target, format))
         Path(target).write_bytes(b"fake-composite-bytes")
 
 
@@ -177,9 +177,29 @@ def test_download_is_atomic_no_stray_part_file_after_success(tmp_path):
     assert not target.with_suffix(target.suffix + ".part").exists()
 
 
+def test_download_passes_an_explicit_format_not_guessed_from_the_part_suffix(tmp_path):
+    # Encontrado contra una descarga REAL (revisión final del
+    # 2026-09-29): sin `format=` explícito, openEO adivina el formato de
+    # salida a partir de la EXTENSIÓN del archivo de destino -- pero el
+    # destino real que se le pasa a `download()` es la ruta temporal
+    # ".part" (`target.with_suffix(target.suffix + ".part")`, para el
+    # rename atómico), no el ".tif" final. Adivinar desde ".tif.part" da
+    # `ValueError: Invalid format 'PART'. Should be one of {...}` --
+    # reproducido contra la API real de Copernicus Data Space. Pasar
+    # `format="GTiff"` explícito evita depender de la extensión del
+    # archivo temporal en absoluto.
+    fake_connection = _FakeConnection()
+    client = Sentinel2Client(
+        client_id="id", client_secret="secret", connect_fn=lambda url: fake_connection
+    )
+    client.fetch_monthly_composite(BBOX, year=2026, month=1, target=tmp_path / "out.tif")
+    download_call = next(c for c in fake_connection.log if c[0] == "download")
+    assert download_call[2] == "GTiff"
+
+
 def test_interrupted_download_never_produces_final_target(tmp_path):
     class _CrashingDataCube(_FakeDataCube):
-        def download(self, target: str) -> None:
+        def download(self, target: str, format: str | None = None) -> None:  # noqa: A002
             Path(target).write_bytes(b"TRUNCATED-partial-download")
             raise RuntimeError("network interrupted")
 

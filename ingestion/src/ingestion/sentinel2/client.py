@@ -89,6 +89,12 @@ class Sentinel2Client:
         composite = reflectance.reduce_dimension(dimension="t", reducer="median")
 
         tmp_target = target.with_suffix(target.suffix + ".part")
-        composite.download(str(tmp_target))
+        # format="GTiff" explícito -- sin esto, openEO adivina el formato
+        # de salida desde la EXTENSIÓN del archivo de destino, y el
+        # destino real acá es la ruta temporal ".part" (para el rename
+        # atómico de abajo), no ".tif". Adivinar desde ".tif.part" falla
+        # con "Invalid format 'PART'" -- reproducido contra la API real
+        # de Copernicus Data Space (revisión final del 2026-09-29).
+        composite.download(str(tmp_target), format="GTiff")
         os.replace(tmp_target, target)
         return target
