@@ -80,11 +80,20 @@ class ChileFinetuneDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         event, day_index = self._pairs[index]
-        x = torch.from_numpy(event.values[day_index].astype("float32"))
-        y = torch.from_numpy(
-            event.values[day_index + 1, _FIRE_MASK_CHANNEL_INDEX].astype("float32")
+        # eventos reales cerca de bordes de cobertura (WorldCover,
+        # Sentinel-2) pueden dejar una fracción minúscula de NaN
+        # residual incluso después del relleno con el promedio regional
+        # de clima (features/dataset/pipeline.py, ver
+        # docs/limitations.md) -- NaN sin tratar envenena la convolución
+        # del U-Net en TODA la imagen del batch, no solo en esa celda.
+        # 0.0 es un último recurso documentado, no una corrección
+        # silenciosa: la fracción afectada es ínfima (<0.1% de las
+        # celdas en los eventos reales de docs/backtest-2026.md).
+        x = np.nan_to_num(event.values[day_index].astype("float32"), nan=0.0)
+        y = np.nan_to_num(
+            event.values[day_index + 1, _FIRE_MASK_CHANNEL_INDEX].astype("float32"), nan=0.0
         )
-        return x, y
+        return torch.from_numpy(x), torch.from_numpy(y)
 
 
 @dataclass(frozen=True)

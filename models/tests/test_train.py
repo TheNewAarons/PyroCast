@@ -129,6 +129,32 @@ def test_chile_finetune_dataset_maps_each_pair_to_the_exact_day_and_next_day_fir
     assert y[0, 0].item() == 2000 + 10 + fire_idx  # evento 2, día 1, fire_mask
 
 
+def test_chile_finetune_dataset_replaces_residual_nan_with_zero():
+    # eventos reales cerca de bordes de cobertura (WorldCover, Sentinel-2)
+    # pueden dejar una fracción minúscula de NaN residual en canales
+    # NO climáticos (fuel_type, ndvi) incluso después del relleno con el
+    # promedio regional de clima (docs/limitations.md) -- verificado
+    # contra los 15 eventos reales de docs/backtest-2026.md (event_12676775:
+    # fuel_type NaN en 990/19600 celdas de borde). NaN sin tratar
+    # envenena la convolución del U-Net en toda la imagen del batch, no
+    # solo en esa celda.
+    n_days, size = 2, 4
+    data = np.zeros((n_days, len(CHANNEL_ORDER), size, size), dtype="float32")
+    fuel_idx = CHANNEL_ORDER.index("fuel_type")
+    data[:, fuel_idx, 0, 0] = np.nan
+    days = [(dt.date(2026, 1, 1) + dt.timedelta(days=d)).isoformat() for d in range(n_days)]
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={"day": days, "channel": list(CHANNEL_ORDER)},
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 1},
+    )
+    dataset = ChileFinetuneDataset([event])
+    x, y = dataset[0]
+    assert not torch.isnan(x).any()
+    assert x[fuel_idx, 0, 0].item() == 0.0
+    assert not torch.isnan(y).any()
+
+
 def test_train_model_reduces_loss_over_a_few_epochs(tmp_path):
     set_seed(42)
     samples = [_make_public_sample(seed=i) for i in range(6)]
