@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import rasterio
 import xarray as xr
 from pyproj import Transformer
 from rasterio.warp import Resampling
@@ -194,7 +195,9 @@ def build_dataset_for_event(
         for field in _WEATHER_FIELDS:
             path = weather_for_day.get(field)
             dynamic[field][day] = (
-                resample_to_grid(path, grid, Resampling.bilinear)
+                _fill_weather_nan_with_source_mean(
+                    resample_to_grid(path, grid, Resampling.bilinear), path
+                )
                 if path is not None
                 else _nan_array(grid.height, grid.width)
             )
@@ -222,6 +225,32 @@ def build_dataset_for_event(
     # SRID=4326, produciendo un polígono geométricamente sin sentido
     # (encontrado en la revisión final del 2026-09-27).
     return tensor, event_bbox
+
+
+def _fill_weather_nan_with_source_mean(resampled: np.ndarray, source_path: Path) -> np.ndarray:
+    # ERA5-Land solo cubre tierra: cerca de la costa, la interpolación
+    # bilineal entre una celda de tierra válida y una de océano (nodata)
+    # produce NaN en una fracción de píxeles del RECORTE del evento,
+    # incluso en un día con datos disponibles -- verificado contra datos
+    # reales (revisión final del 2026-09-29, ver docs/limitations.md).
+    # NaN sin tratar envenena la convolución del U-Net en TODA la imagen
+    # (no solo esa celda). Se rellena con el promedio de los píxeles
+    # VÁLIDOS del archivo FUENTE completo (la región de estudio entera),
+    # no del recorte del evento -- un evento muy costero podría no tener
+    # ningún píxel válido propio del que promediar.
+    if not np.isnan(resampled).any():
+        return resampled
+    with rasterio.open(source_path) as src:
+        source_data = src.read(1).astype("float64")
+        src_nodata = src.nodata
+    if src_nodata is not None and not (isinstance(src_nodata, float) and np.isnan(src_nodata)):
+        source_data = np.where(source_data == src_nodata, np.nan, source_data)
+    mean_value = np.nanmean(source_data)
+    if np.isnan(mean_value):
+        # el archivo fuente entero tampoco tiene ningún píxel válido --
+        # no hay de dónde fabricar un valor, se deja NaN explícito.
+        return resampled
+    return np.where(np.isnan(resampled), np.float32(mean_value), resampled).astype("float32")
 
 
 def _nan_array(height: int, width: int) -> np.ndarray:

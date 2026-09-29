@@ -240,4 +240,68 @@ def test_build_dataset_for_event_pads_before_first_detection_and_fills_fire_mask
     # minúsculo, sin margen para que un modelo de propagación tenga algo
     # hacia dónde propagar.
     assert tensor.shape[-2] >= 15
+
+
+def test_build_dataset_for_event_fills_partial_weather_nan_with_the_source_mean(tmp_path):
+    # ERA5-Land solo cubre tierra: en un evento cercano a la costa, la
+    # interpolación bilineal cerca del borde tierra/océano produce NaN
+    # en una fracción de píxeles del evento incluso en un día
+    # totalmente cubierto -- verificado contra datos reales (revisión
+    # final del 2026-09-29, ver docs/limitations.md). NaN sin tratar
+    # envenena la convolución del U-Net (todo el batch, no solo esa
+    # celda) -- se rellena con el promedio de los píxeles VÁLIDOS de la
+    # región completa (el archivo fuente, no el recorte del evento, que
+    # podría no tener ningún píxel válido).
+    processed = tmp_path / "processed"
+    resolution_m = 250.0
+    crs = "EPSG:32719"
+
+    day1 = dt.datetime(2026, 1, 10, 12, 0, tzinfo=dt.UTC)
+    event = FireEvent(event_id=7, detections=(_det(-38.0, -72.5, day1),))
+    event_bbox = _event_bbox_wgs84(event.detections, crs, buffer_m=DEFAULT_CONTEXT_BUFFER_M)
+    grid = build_grid(event_bbox, crs, resolution_m)
+    transform, size = grid.transform, max(grid.height, grid.width)
+
+    _write_tif(processed / "dem" / "dem_x.tif", 100.0, size, transform, crs)
+    _write_tif(processed / "terrain" / "slope_deg.tif", 5.0, size, transform, crs)
+    _write_tif(processed / "terrain" / "aspect_deg.tif", 0.0, size, transform, crs)
+    _write_tif(processed / "vegetation" / "fuel_type.tif", 3.0, size, transform, crs)
+    _write_tif(processed / "vegetation" / "ndvi_2026-01.tif", 0.5, size, transform, crs)
+
+    all_days = padded_days_for_event(event)
+    for day in all_days:
+        for field in ("wind_v", "temperature", "relative_humidity", "precipitation"):
+            _write_tif(
+                processed / "weather" / f"{field}_{day.isoformat()}.tif", 1.0, size, transform, crs
+            )
+        # wind_u: mitad de la región fuente es océano (nodata) -- valor
+        # válido constante 5.0 en la otra mitad.
+        wind_u_data = np.full((size, size), 5.0, dtype="float32")
+        wind_u_data[:, : size // 2] = -9999.0
+        wind_u_path = processed / "weather" / f"wind_u_{day.isoformat()}.tif"
+        wind_u_path.parent.mkdir(parents=True, exist_ok=True)
+        with rasterio.open(
+            wind_u_path, "w", driver="GTiff", height=size, width=size, count=1,
+            dtype="float32", crs=crs, transform=transform, nodata=-9999.0,
+        ) as dst:
+            dst.write(wind_u_data, 1)
+
+    settings = Settings(
+        firms_map_key="x", cds_api_url="x", cds_api_key="x",
+        copernicus_dataspace_client_id="x", copernicus_dataspace_client_secret="x",
+        postgres_host="x", postgres_port=5432, postgres_db="x", postgres_user="x",
+        postgres_password="x", data_processed_dir=processed,
+    )
+    sources = resolve_event_sources(all_days, settings)
+    tensor, _bbox_cut = build_dataset_for_event(
+        event, sources, resolution_m, crs, event_id=event.event_id
+    )
+
+    wind_u_idx = CHANNEL_ORDER.index("wind_u")
+    wind_u_values = tensor.values[:, wind_u_idx, :, :]
+    assert not np.isnan(wind_u_values).any()
+    # el "océano" (mitad izquierda) se rellenó con el promedio de los
+    # píxeles válidos de la región completa (todos 5.0) -- no con 0, ni
+    # con un valor fabricado distinto.
+    assert np.allclose(wind_u_values, 5.0)
     assert tensor.shape[-1] >= 15

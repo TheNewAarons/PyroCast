@@ -442,12 +442,51 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   real** (`--checkpoint` + `--shard-dir`), a diferencia de
   `pyrocast-train pretrain`, que sí lo tiene por la misma razón (el
   dataset NDWS completo pesa ~4.1 GB, ver `docs/model-card.md`).
-- **El CLI de calibración no soporta calibrar contra un set de
-  validación real de eventos de Chile** -- solo fixture sintético o
-  NDWS real (`--shard-dir`). Agregar esa ruta reutilizaría
-  `models/deep/train.py::_load_chile_events` (o duplicaría su
-  convención una cuarta vez) -- deliberadamente fuera de alcance de
-  este plan, ver `docs/decisions.md`.
+- ~~El CLI de calibración no soporta calibrar contra un set de
+  validación real de eventos de Chile~~ -- resuelto para
+  `docs/backtest-2026.md`: `pyrocast-calibrate run --checkpoint
+  ... --chile-val` reutiliza `models/deep/train.py::ChileFinetuneDataset`.
+- **`pyrocast-train finetune` exigía siempre un checkpoint preentrenado**
+  -- sin dataset público disponible (sin credenciales de Kaggle/NDWS,
+  ver `docs/backtest-2026.md`), no había forma de entrenar un U-Net
+  directamente sobre eventos de Chile. Resuelto: `pretrained_checkpoint`
+  es ahora opcional; sin él, entrena un `SmallUNet` nuevo desde cero.
+  Esto significa que el U-Net de `docs/backtest-2026.md` NUNCA vio el
+  dataset público NDWS -- solo ~11 eventos reales de Chile, un dataset
+  de entrenamiento órdenes de magnitud más chico que el usado en la
+  literatura (NDWS: 18.545 chips). Cualquier resultado débil del U-Net
+  debe considerarse a la luz de este tamaño de entrenamiento, no como
+  evidencia de que la arquitectura en sí sea inadecuada.
+- **`pyrocast-models backtest` solo corría el autómata celular
+  hardcodeado, y no registraba el comando exacto ni el commit de git en
+  `bench/results/*.json`** -- ambos requisitos de `docs/backtest-2026.md`
+  (reproducibilidad). Resuelto: `--model unet` corre `CalibratedUNet`;
+  todo resultado incluye `"command"` y `"git_commit"`.
+- **El autómata celular usado en `docs/backtest-2026.md` NO está
+  calibrado contra incendios reales de Chile** -- `calibrate.py` (P7)
+  sigue sin soportar eventos multi-día reales de `features/dataset/`
+  (su `_score_sample` solo compara un único paso simulado, ver más
+  arriba en este documento); extenderlo a trayectorias multi-día reales
+  quedó fuera de alcance de esta tarea. El backtest reportado usa los
+  parámetros HEURÍSTICOS por defecto (`base_spread_prob=0.3`, etc.), no
+  valores ajustados contra el historial real -- ver `docs/backtest-2026.md`.
+- **ERA5-Land solo cubre tierra: eventos cercanos a la costa producen
+  NaN parcial en los canales de clima incluso en días con datos
+  disponibles** -- verificado contra datos reales de la temporada
+  2025-2026 (revisión final del 2026-09-29): la interpolación bilineal
+  de `features/dataset/pipeline.py::build_dataset_for_event` entre una
+  celda de tierra válida de ERA5-Land y una celda de océano (sin datos)
+  produce NaN en una fracción de píxeles del recorte del evento -- hasta
+  ~13% de los píxeles de clima en el evento más grande de la temporada
+  (`event_1277049523`, cercano a la costa de Biobío). Sin tratar, este
+  NaN envenena la convolución del U-Net en TODA la imagen, no solo en la
+  celda afectada. Se rellena con el promedio de los píxeles VÁLIDOS del
+  archivo fuente COMPLETO (la región de estudio entera, no el recorte
+  del evento, que podría no tener ningún píxel de tierra propio) --
+  `_fill_weather_nan_with_source_mean` en `pipeline.py`. Esto es una
+  imputación real, documentada explícitamente: para un evento muy
+  costero, el clima "local" en la práctica es el promedio regional, no
+  una medición específica de ese punto.
 
 ## Herramienta de investigación
 
