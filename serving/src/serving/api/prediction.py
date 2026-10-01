@@ -159,6 +159,15 @@ class PredictionService:
             )
         return sources
 
+    def weather_range(self) -> tuple[dt.date, dt.date] | None:
+        """Primer y último día con TODO el clima que requiere el modelo
+        (None si no hay ninguno procesado). Solo informativo para la UI:
+        puede haber huecos dentro del rango, /predict los valida igual."""
+        available = self._available_weather_dates(
+            self._settings.data_processed_dir / "weather", self._required_weather_fields()
+        )
+        return (min(available), max(available)) if available else None
+
     def _required_weather_fields(self) -> list[str]:
         return [c for c in self._loaded.required_channels if c in _WEATHER_FIELDS]
 

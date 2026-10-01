@@ -12,6 +12,18 @@ Las respuestas de `/predict` y `/active-fires` son GeoJSON `FeatureCollection` v
 | `limitations` | `"docs/limitations.md"` |
 | `disclaimer` | el aviso de herramienta de investigación |
 
+## `GET /` — mapa web
+
+Página Jinja2 (`serving/web/templates/index.html`) con Leaflet vía CDN (con SRI) y JS propio sin build step (`serving/web/static/app.js`, `app.css`, servidos en `/static`). Con `make serve`, abrir <http://localhost:8000/>.
+
+- Mapa centrado en el área de estudio, base OpenStreetMap, detecciones activas de `/active-fires` (últimos 2 días).
+- Clic en el mapa = punto de ignición; fecha y horizonte en el panel; "Predecir" llama a `POST /predict`.
+- Celdas coloreadas por probabilidad acumulada (5 tramos, leyenda en el panel; < 5 % sin color), deslizador para moverse entre días.
+- El aviso de herramienta de investigación es un encabezado fijo del layout, sin botón de cierre.
+- Los errores del backend (`error.code` / `error.message`, o validación de FastAPI) se muestran en un banner `role="alert"`; ante un error se conserva la predicción anterior, nunca se dibuja una nueva. Las detecciones activas son opcionales: si fallan, solo se avisa en el panel.
+- Las URLs y el rango de clima procesado los inyecta el HTML en atributos `data-*` de `#app`; la fecha por defecto es el primer día con clima.
+- Texto del backend siempre con `textContent` (sin HTML). Sin JavaScript solo se ve el aviso y el mensaje `noscript`.
+
 ## `GET /healthz`
 
 `{"status": "ok"}`. No toca modelo ni datos.

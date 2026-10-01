@@ -1,4 +1,4 @@
-"""API de PyroCast: /predict, /active-fires, /healthz.
+"""API y mapa web de PyroCast: /predict, /active-fires, /healthz, / (mapa).
 
 Aviso obligatorio (ver CLAUDE.md): esta es una herramienta de
 investigación, no un sistema operativo de combate de incendios.
@@ -10,8 +10,10 @@ configuración recién al iniciar (lifespan), no al importar.
 """
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from ingestion.firms.client import FirmsClient
 from shared.config import Settings, get_settings
 
@@ -24,8 +26,12 @@ from serving.api.cache import LRUCache
 from serving.api.errors import register_error_handlers
 from serving.api.model_registry import LoadedModel, load_default_model
 from serving.api.prediction import PredictionService
-from serving.api.routers import fires, health, predict
+from serving.api.routers import fires, health, predict, web
 from serving.api.schemas import ActiveFiresResponse, PredictResponse
+
+# serving/web/ (plantillas Jinja2 + estáticos) vive junto al paquete, no
+# dentro de él: serving/src/serving/api/main.py -> parents[3] == serving/
+WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 
 PREDICTION_CACHE_SIZE = 256
 ACTIVE_FIRES_CACHE_SIZE = 8
@@ -42,6 +48,7 @@ def create_app(
         # credenciales, en vez de arrancar "en verde" con una config inválida.
         resolved = settings if settings is not None else get_settings()
         loaded = model_loader()  # una sola vez, no por request
+        app.state.settings = resolved
         app.state.prediction_service = PredictionService(
             resolved, loaded, LRUCache[PredictResponse](PREDICTION_CACHE_SIZE)
         )
@@ -64,6 +71,8 @@ def create_app(
     app.include_router(health.router)
     app.include_router(predict.router)
     app.include_router(fires.router)
+    app.include_router(web.router)
+    app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
     return app
 
 

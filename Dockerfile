@@ -28,6 +28,7 @@ RUN groupadd --gid 1000 pyrocast && \
 WORKDIR /app
 COPY --from=builder /build/.venv /app/.venv
 COPY serving/src /app/serving/src
+COPY serving/web /app/serving/web
 COPY shared/src /app/shared/src
 COPY features/src /app/features/src
 COPY models/src /app/models/src
