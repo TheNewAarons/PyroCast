@@ -27,12 +27,17 @@ formato del token del usuario) se soportan por duck typing:
 """
 import calendar
 import datetime as dt
+import os
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import cdsapi
+import requests
+
+from ingestion.resilience import IngestionError, QuotaExceededError, redact
 
 # request_name (usado por build_request/CDS) -> (nombre corto en el NetCDF
 # resultante, método de agregación diaria). "carryover" es el caso especial
@@ -54,12 +59,40 @@ _SUCCESS_STATES = {"completed", "successful"}
 _FAILURE_STATES = {"failed", "rejected", "dismissed", "deleted"}
 
 
-class Era5RequestFailedError(RuntimeError):
+SOURCE = "ERA5-Land (CDS)"
+_QUOTA_PATTERN = re.compile(r"quota|too many|limit|429|cost", re.IGNORECASE)
+_TRANSIENT_STATUS = re.compile(r"\b(500|502|503|504)\b")
+
+
+class Era5RequestFailedError(IngestionError):
     """La solicitud a CDS terminó en un estado de fallo."""
 
+    def __init__(self, message: str, hint: str = "") -> None:
+        super().__init__(SOURCE, message, hint)
 
-class Era5RequestTimeoutError(RuntimeError):
+
+class Era5RequestTimeoutError(IngestionError):
     """La solicitud a CDS no completó dentro del timeout configurado."""
+
+    def __init__(self, message: str, hint: str = "") -> None:
+        super().__init__(
+            SOURCE, message,
+            hint or "CDS está encolado o saturado: reintenta más tarde o sube --timeout-seconds; "
+                    "los tramos mensuales ya descargados se reutilizan.",
+        )
+
+
+class Era5QuotaExceededError(Era5RequestFailedError, QuotaExceededError):
+    """CDS rechazó la solicitud por límite de cuota / cola."""
+
+
+def _default_cds_client(url: str, key: str, wait_until_complete: bool) -> Any:
+    # timeout/retry_max de cdsapi acotan CADA petición HTTP individual (el
+    # polling total lo acota `timeout_seconds` de download_hourly).
+    return cdsapi.Client(
+        url=url, key=key, wait_until_complete=wait_until_complete,
+        timeout=60, retry_max=3, quiet=True,
+    )
 
 
 def month_chunks(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
@@ -134,9 +167,47 @@ class Era5Client:
         self,
         url: str,
         key: str,
-        client_factory: Callable[..., Any] = cdsapi.Client,
+        client_factory: Callable[..., Any] = _default_cds_client,
+        max_retries: int = 3,
+        backoff_base_seconds: float = 5.0,
+        sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
+        self._key = key
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base_seconds
+        self._retry_sleep = sleep_fn
         self._client = client_factory(url=url, key=key, wait_until_complete=False)
+
+    def _call(self, what: str, fn: Callable[[], Any]) -> Any:
+        """Ejecuta una operación de cdsapi: reintenta fallas transitorias de
+        red/5xx con backoff, y envuelve TODA excepción cruda en un error
+        tipado (cuota / falla) sin la clave."""
+        attempt = 0
+        while True:
+            try:
+                return fn()
+            except IngestionError:
+                raise
+            except Exception as exc:
+                text = redact(f"{type(exc).__name__}: {exc}", [self._key])
+                if _QUOTA_PATTERN.search(text):
+                    raise Era5QuotaExceededError(
+                        f"CDS rechazó {what} por cuota/límite de solicitudes: {text}",
+                        hint="Espera a que terminen tus solicitudes en cola en "
+                             "https://cds.climate.copernicus.eu/requests y reintenta.",
+                    ) from None
+                transient = isinstance(exc, requests.ConnectionError | requests.Timeout) or bool(
+                    _TRANSIENT_STATUS.search(text)
+                )
+                if transient and attempt < self._max_retries:
+                    self._retry_sleep(self._backoff_base * (2**attempt))
+                    attempt += 1
+                    continue
+                raise Era5RequestFailedError(
+                    f"Falló {what} tras {attempt} reintento(s): {text}",
+                    hint="Revisa CDS_API_URL / CDS_API_KEY y que hayas aceptado la licencia "
+                         "del dataset ERA5-Land en el sitio de CDS (docs/data-sources.md).",
+                ) from None
 
     def download_hourly(
         self,
@@ -148,14 +219,16 @@ class Era5Client:
         sleep_fn: Callable[[float], None] = time.sleep,
         monotonic_fn: Callable[[], float] = time.monotonic,
     ) -> Path:
-        remote = self._client.retrieve(dataset, request)
+        remote = self._call(
+            "el envío de la solicitud", lambda: self._client.retrieve(dataset, request)
+        )
         start = monotonic_fn()
 
         while True:
             state = _state_of(remote)
 
             if state in _SUCCESS_STATES:
-                remote.download(str(target))
+                self._download_atomically(remote, target)
                 return target
 
             if state in _FAILURE_STATES:
@@ -170,4 +243,19 @@ class Era5Client:
                 )
 
             sleep_fn(poll_interval_seconds)
-            remote.update()
+            self._call("la consulta de estado", remote.update)
+
+    def _download_atomically(self, remote: Any, target: Path) -> None:
+        # a .part y os.replace: una descarga cortada nunca deja un .nc
+        # parcial que el pipeline tome por un tramo ya descargado.
+        tmp = target.with_suffix(target.suffix + ".part")
+
+        def _download() -> None:
+            try:
+                remote.download(str(tmp))
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
+
+        self._call("la descarga del archivo", _download)
+        os.replace(tmp, target)

@@ -1,6 +1,6 @@
 .PHONY: up down ingest-firms ingest-terrain ingest-weather ingest-vegetation \
         build-dataset run-ca train calibrate backtest report report-artifacts serve \
-        test lint typecheck
+        test lint typecheck audit
 
 up:
 	docker compose up -d
@@ -62,7 +62,8 @@ report-artifacts:
 	uv run --package models pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v2/best.pt
 
 serve:
-	uv run --package serving uvicorn serving.api.main:app --reload --host 0.0.0.0 --port 8000
+	# desarrollo local: solo loopback (el contenedor expone 0.0.0.0 por su cuenta) y /docs activo
+	ENVIRONMENT=development uv run --package serving uvicorn serving.api.main:app --reload --host 127.0.0.1 --port 8000
 
 test:
 	uv run --package shared pytest shared/tests -v
@@ -76,3 +77,8 @@ lint:
 
 typecheck:
 	uv run mypy --strict shared/src features/src serving/src
+
+# vulnerabilidades conocidas en las dependencias bloqueadas (uv.lock); igual que el job de CI
+audit:
+	uv export --frozen --all-packages --no-hashes --no-emit-workspace -o /tmp/pyrocast-requirements-audit.txt
+	uvx pip-audit -r /tmp/pyrocast-requirements-audit.txt --no-deps --disable-pip --progress-spinner off

@@ -9,7 +9,11 @@ from rasterio.merge import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from ingestion.worldcover.cache import cache_key_for
-from ingestion.worldcover.client import WorldCoverDownloadError, download_tile
+from ingestion.worldcover.client import (
+    WorldCoverDownloadError,
+    WorldCoverTileNotFoundError,
+    download_tile,
+)
 from ingestion.worldcover.tiles import tile_key, tiles_for_bbox
 
 _DEFAULT_NODATA = 0.0  # WorldCover ya declara nodata=0 en sus tiles reales;
@@ -41,7 +45,7 @@ def build_worldcover(
         dest = raw_tiles_dir / f"{key}.tif"
         try:
             tile_paths.append(download_fn(key, dest, version, year))
-        except WorldCoverDownloadError:
+        except WorldCoverTileNotFoundError:
             continue
 
     if not tile_paths:

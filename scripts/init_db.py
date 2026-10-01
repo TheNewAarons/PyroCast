@@ -9,7 +9,8 @@ from shared.config import get_settings
 from shared.db.schema import metadata
 from sqlalchemy import create_engine, text
 
-app = typer.Typer()
+# show_locals=False: los locals de un traceback pueden incluir credenciales
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 @app.command("create-all")

@@ -38,9 +38,14 @@ def fetch_daily_era5(
         request = build_request(bbox, chunk_start, chunk_end, variables=variables)
         chunk_key = f"{key}_{chunk_start.isoformat()}_{chunk_end.isoformat()}"
         hourly_path = raw_dir / f"era5_hourly_{chunk_key}.nc"
-        era5_client.download_hourly(
-            "reanalysis-era5-land", request, hourly_path, timeout_seconds=timeout_seconds
-        )
+        # reanudable: un tramo mensual ya descargado en una corrida
+        # anterior (que falló más adelante) no se vuelve a pedir -- ahorra
+        # horas de cola de CDS y cuota. El cliente escribe atómicamente,
+        # así que un archivo existente siempre está completo.
+        if not hourly_path.exists():
+            era5_client.download_hourly(
+                "reanalysis-era5-land", request, hourly_path, timeout_seconds=timeout_seconds
+            )
         hourly_paths.append(hourly_path)
 
     return aggregate_hourly_to_daily(hourly_paths, start, end, daily_path)

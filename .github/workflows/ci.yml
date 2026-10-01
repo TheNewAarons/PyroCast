@@ -33,6 +33,26 @@ jobs:
           uv run --package models pytest models/tests -v
           uv run --package serving pytest serving/tests -v
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      # Audita las versiones EXACTAS de uv.lock (todas las dependencias
+      # transitivas del workspace) contra la base de vulnerabilidades de
+      # PyPI/OSV. Falla el job ante cualquier vulnerabilidad conocida: si
+      # una no tiene arreglo disponible, justificarla en docs/decisions.md
+      # y agregarla con --ignore-vuln.
+      - name: pip-audit
+        run: |
+          uv export --frozen --all-packages --no-hashes --no-emit-workspace -o requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt --no-deps --disable-pip --progress-spinner off
+
   docker:
     runs-on: ubuntu-latest
     steps:

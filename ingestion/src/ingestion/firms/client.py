@@ -25,6 +25,8 @@ from collections.abc import Callable, Iterator
 
 import requests
 
+from ingestion.resilience import DEFAULT_TIMEOUT, IngestionError, QuotaExceededError
+
 _BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
 _EXPECTED_HEADER_PREFIX = "latitude,longitude"
 _MIN_DAY_RANGE = 1
@@ -32,9 +34,21 @@ _MAX_DAY_RANGE = 5
 _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 
-class FirmsApiError(RuntimeError):
+SOURCE = "NASA FIRMS"
+_FIRMS_TIMEOUT = (DEFAULT_TIMEOUT[0], 30.0)  # (conexión, lectura)
+
+
+class FirmsApiError(IngestionError):
     """Error no reintentable del Area API de FIRMS (clave inválida,
     cuerpo de respuesta que no es CSV, o reintentos agotados)."""
+
+    def __init__(self, message: str, hint: str = "") -> None:
+        super().__init__(SOURCE, message, hint)
+
+
+class FirmsQuotaExceededError(FirmsApiError, QuotaExceededError):
+    """Cuota agotada: FIRMS limita a 5000 transacciones por ventana de 10 min
+    por MAP_KEY y respondió 429 también tras los reintentos."""
 
 
 class FirmsClient:
@@ -91,7 +105,7 @@ class FirmsClient:
             self._rate_limit()
             self._last_request_at = self._monotonic_fn()
             try:
-                response = self._session.get(url, timeout=30)
+                response = self._session.get(url, timeout=_FIRMS_TIMEOUT)
             except requests.RequestException as exc:
                 if attempt < self._max_retries:
                     self._sleep_fn(self._backoff_base_seconds * (2**attempt))
@@ -118,6 +132,13 @@ class FirmsClient:
                 attempt += 1
                 continue
 
+            if response.status_code == 429:
+                raise FirmsQuotaExceededError(
+                    f"Cuota de la API de FIRMS agotada (HTTP 429 tras {attempt} reintento(s)): "
+                    f"el límite es 5000 transacciones por ventana de 10 min por MAP_KEY.",
+                    hint="Espera ~10 minutos y reintenta; las consultas ya descargadas quedaron "
+                         "guardadas (reanuda con --start en la fecha donde se cortó).",
+                )
             raise FirmsApiError(
                 f"FIRMS Area API devolvió estado {response.status_code} tras "
                 f"{attempt} reintento(s): {self._redact(response.text[:200])!r}"

@@ -7,6 +7,7 @@ from shared.config import get_settings
 from ingestion.firms.client import FirmsClient
 from ingestion.firms.parser import parse_csv_to_detections
 from ingestion.firms.storage import save_raw_response
+from ingestion.resilience import IngestionError
 
 # SOURCE values documentados por el Area API de FIRMS (ver
 # docs/superpowers/plans/2026-09-26-ingestion-firms.md para la
@@ -63,19 +64,31 @@ def firms(
 
     total_detections = 0
     total_chunks = 0
-    for chunk_start, chunk_end, raw_csv in chunks:
-        save_raw_response(
-            raw_csv_text=raw_csv,
-            query_start=chunk_start,
-            query_end=chunk_end,
-            bbox=area,
-            sensor=sensor,
-            downloaded_at=dt.datetime.now(dt.UTC),
-            base_dir=settings.data_raw_dir,
+    resume_from = start.date()
+    try:
+        for chunk_start, chunk_end, raw_csv in chunks:
+            save_raw_response(
+                raw_csv_text=raw_csv,
+                query_start=chunk_start,
+                query_end=chunk_end,
+                bbox=area,
+                sensor=sensor,
+                downloaded_at=dt.datetime.now(dt.UTC),
+                base_dir=settings.data_raw_dir,
+            )
+            detections = parse_csv_to_detections(raw_csv)
+            total_detections += len(detections)
+            total_chunks += 1
+            resume_from = chunk_end + dt.timedelta(days=1)
+            typer.echo(f"{chunk_start}..{chunk_end}: {len(detections)} detecciones")
+    except IngestionError:
+        # lo ya descargado quedó persistido: decir hasta dónde se llegó
+        # para no re-descargar (ni gastar cuota) de nuevo.
+        typer.echo(
+            f"Progreso guardado: {total_chunks} consulta(s), {total_detections} detecciones. "
+            f"Reanuda con --start {resume_from.isoformat()}.",
+            err=True,
         )
-        detections = parse_csv_to_detections(raw_csv)
-        total_detections += len(detections)
-        total_chunks += 1
-        typer.echo(f"{chunk_start}..{chunk_end}: {len(detections)} detecciones")
+        raise
 
     typer.echo(f"Total: {total_detections} detecciones en {total_chunks} consulta(s)")

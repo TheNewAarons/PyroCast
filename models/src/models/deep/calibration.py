@@ -247,7 +247,8 @@ class CalibratedUNet:
         return output
 
 
-app = typer.Typer()
+# show_locals=False: los locals de un traceback pueden incluir credenciales
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 @app.callback()

@@ -91,3 +91,25 @@ def test_get_settings_raises_configuration_error_naming_missing_env_vars(monkeyp
     assert "FIRMS_MAP_KEY" in message
     assert "POSTGRES_PASSWORD" in message
     assert ".env.example" in message
+
+
+def test_settings_repr_and_str_never_contain_credentials(monkeypatch):
+    secrets = {
+        "FIRMS_MAP_KEY": "firms-SECRET-1", "CDS_API_KEY": "cds-SECRET-2",
+        "COPERNICUS_DATASPACE_CLIENT_SECRET": "cdse-SECRET-3", "POSTGRES_PASSWORD": "pg-SECRET-4",
+    }
+    for key, value in {**REQUIRED_ENV, **secrets}.items():
+        monkeypatch.setenv(key, value)
+    settings = Settings(_env_file=None)
+    for text in (repr(settings), str(settings)):
+        for secret in secrets.values():
+            assert secret not in text
+    assert settings.firms_map_key == "firms-SECRET-1"  # el valor sigue accesible para usarse
+
+
+def test_security_defaults_are_production_and_no_cors(monkeypatch):
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    settings = Settings(_env_file=None)
+    assert settings.environment == "production"
+    assert settings.cors_allow_origins == []

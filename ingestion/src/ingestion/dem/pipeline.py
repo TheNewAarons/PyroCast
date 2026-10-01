@@ -9,7 +9,7 @@ from rasterio.merge import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from ingestion.dem.cache import cache_key_for
-from ingestion.dem.client import DemDownloadError, download_tile
+from ingestion.dem.client import DemDownloadError, TileNotFoundError, download_tile
 from ingestion.dem.tiles import tile_key, tiles_for_bbox
 
 # Los tiles reales de Copernicus DEM GLO-30 declaran nodata=None (verificado
@@ -42,12 +42,15 @@ def build_dem(
         dest = raw_tiles_dir / f"{key}.tif"
         try:
             tile_paths.append(download_fn(key, dest))
-        except DemDownloadError:
+        except TileNotFoundError:
             # GLO-30 Public tiene huecos de cobertura (variante Public vs.
             # -R no liberada) y tiles oceánicos genuinamente no existen —
             # se tolera un tile faltante (queda como hueco en el mosaico,
             # cubierto por el nodata de abajo) y solo se falla si NINGÚN
-            # tile de los pedidos pudo descargarse.
+            # tile de los pedidos pudo descargarse. SOLO un 404 se
+            # tolera: una falla de red/5xx/cuota (SourceUnavailableError,
+            # QuotaExceededError) propaga -- tolerarla dejaría un hueco
+            # silencioso en el mosaico que parece un tile oceánico.
             continue
 
     if not tile_paths:

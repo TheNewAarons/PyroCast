@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rasterio
-from ingestion.dem.client import DemDownloadError
+from ingestion.dem.client import DemDownloadError, TileNotFoundError
 from ingestion.dem.pipeline import build_dem
 from ingestion.dem.tiles import tile_key
 from rasterio.transform import from_origin
@@ -109,7 +109,7 @@ def test_build_dem_missing_tile_produces_tagged_hole_not_fabricated_zero(tmp_pat
 
     def fake_download(key: str, dest_path: Path) -> Path:
         if key == missing_key:
-            raise DemDownloadError(f"404 simulado para {key}")
+            raise TileNotFoundError(f"404 simulado para {key}")
         if not dest_path.exists():
             _write_synthetic_tile(dest_path, sw_lat=-38, sw_lon=-73, value_at_sw=100.0)
         return dest_path
@@ -131,7 +131,7 @@ def test_build_dem_raises_when_every_requested_tile_fails(tmp_path):
     cache_dir = tmp_path / "cache"
 
     def always_fails(key: str, dest_path: Path) -> Path:
-        raise DemDownloadError(f"404 simulado para {key}")
+        raise TileNotFoundError(f"404 simulado para {key}")
 
     with pytest.raises(DemDownloadError, match="Ninguno"):
         build_dem(

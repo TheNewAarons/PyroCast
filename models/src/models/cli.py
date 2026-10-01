@@ -50,7 +50,8 @@ def _exact_command(args: list[str]) -> str:
     # invocar el mismo comando (uv run, el entry point instalado, etc).
     return " ".join(["pyrocast-models", "backtest", *args])
 
-app = typer.Typer()
+# show_locals=False: los locals de un traceback pueden incluir credenciales
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 @app.callback()

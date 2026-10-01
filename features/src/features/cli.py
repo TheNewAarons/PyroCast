@@ -17,7 +17,8 @@ from features.dataset.pipeline import (
 from features.dataset.split import split_events
 from features.fire_state.clustering import build_fire_events
 
-app = typer.Typer()
+# show_locals=False: los locals de un traceback pueden incluir credenciales
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 @app.callback()

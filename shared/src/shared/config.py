@@ -12,8 +12,9 @@ proyecto — no es un límite administrativo exacto).
 """
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Nombre de la variable de entorno para cada campo de Settings que no
@@ -62,28 +63,43 @@ class Settings(BaseSettings):
     spatial_resolution_m: int = 250
     temporal_resolution: str = "daily"
 
+    # Seguridad de la API (serving/). Por defecto, "production": sin /docs ni
+    # /openapi.json. `make serve` fija ENVIRONMENT=development. CORS: lista
+    # EXPLÍCITA de orígenes (JSON en la variable, p. ej.
+    # CORS_ALLOW_ORIGINS='["https://mi-app.example"]'); vacía = ninguno (la
+    # interfaz web se sirve desde el mismo origen y no lo necesita).
+    environment: Literal["development", "production"] = "production"
+    cors_allow_origins: list[str] = Field(default_factory=list)
+
+    @field_validator("cors_allow_origins")
+    @classmethod
+    def _no_wildcard_origin(cls, origins: list[str]) -> list[str]:
+        if "*" in origins:
+            raise ValueError("CORS_ALLOW_ORIGINS no admite '*': listar los orígenes explícitos")
+        return origins
+
     # Rutas de datos (fuera de la imagen Docker, ver docker-compose.yml).
     data_raw_dir: Path = Path("data/raw")
     data_interim_dir: Path = Path("data/interim")
     data_processed_dir: Path = Path("data/processed")
 
     # NASA FIRMS — https://firms.modaps.eosdis.nasa.gov/api/map_key/
-    firms_map_key: str = Field(..., min_length=1)
+    firms_map_key: str = Field(..., min_length=1, repr=False)
 
     # Copernicus CDS (ERA5-Land) — https://cds.climate.copernicus.eu/how-to-api
     cds_api_url: str = Field(..., min_length=1)
-    cds_api_key: str = Field(..., min_length=1)
+    cds_api_key: str = Field(..., min_length=1, repr=False)
 
     # Copernicus Data Space Ecosystem (Sentinel-2) — https://dataspace.copernicus.eu/
-    copernicus_dataspace_client_id: str = Field(..., min_length=1)
-    copernicus_dataspace_client_secret: str = Field(..., min_length=1)
+    copernicus_dataspace_client_id: str = Field(..., min_length=1, repr=False)
+    copernicus_dataspace_client_secret: str = Field(..., min_length=1, repr=False)
 
     # PostgreSQL/PostGIS
     postgres_host: str = Field(..., min_length=1)
     postgres_port: int = Field(...)
     postgres_db: str = Field(..., min_length=1)
     postgres_user: str = Field(..., min_length=1)
-    postgres_password: str = Field(..., min_length=1)
+    postgres_password: str = Field(..., min_length=1, repr=False)
 
     @property
     def postgres_dsn(self) -> str:
