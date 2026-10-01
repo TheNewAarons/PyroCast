@@ -306,7 +306,7 @@ def test_chile_finetune_dataset_default_uses_cumulative_burned_area_for_input_an
     data[2, fire, 1, 1] = 1.0
     event = xr.DataArray(
         data, dims=("day", "channel", "y", "x"),
-        coords={"day": ["2026-01-0%d" % (d + 1) for d in range(4)],
+        coords={"day": [f"2026-01-0{d + 1}" for d in range(4)],
                 "channel": list(CHANNEL_ORDER)},
         name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 1},
     )

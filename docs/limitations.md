@@ -474,7 +474,7 @@ resueltas están en "Resueltas (historial)", no se borran.
   de FIXTURE sintético** (`pyrocast-calibrate run --fixture`): prueba
   que el pipeline funciona de punta a punta, no que el U-Net real esté
   bien calibrado. La calibración del checkpoint real
-  (`runs/finetune_2026_v4`, `--chile-val`, solo 2 eventos de val) está
+  (`runs/finetune_2026_v5`, `--chile-val`, solo 2 eventos de val) está
   en `docs/results.md` sección 3.
 - **Sin split de calibración separado del de validación** -- ver
   `docs/decisions.md`. El ECE post-calibración de `make calibrate` da

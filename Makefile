@@ -57,9 +57,9 @@ backtest:
 report:
 	uv run --package models pyrocast-models report
 
-# necesita runs/finetune_2026_v4/best.pt (+ .calibrator.pt) y data/processed/dataset
+# necesita runs/finetune_2026_v5/best.pt (+ .calibrator.pt) y data/processed/dataset
 report-artifacts:
-	uv run --package models pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v4/best.pt
+	uv run --package models pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v5/best.pt
 
 serve:
 	# desarrollo local: solo loopback (el contenedor expone 0.0.0.0 por su cuenta) y /docs activo
