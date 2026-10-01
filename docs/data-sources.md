@@ -230,8 +230,8 @@ año, mes)`. Descarga atómica (`.part` + `os.replace`).
 
 **Corrección radiométrica:** los composites que entrega openEO/CDSE **ya
 vienen con el offset BOA aplicado** (verificado el 2026-10-01 contra los
-15 composites descargados: DN mínimos de 5-15 y valores negativos,
-imposibles si el offset +1000 estuviera presente). Una versión anterior de
+15 composites descargados: DN mínimos entre -98 y 36, con valores
+negativos en 9 de 15, imposibles si el offset +1000 estuviera presente). Una versión anterior de
 este proyecto restaba un offset de -1000 por segunda vez y escribía NDVI de
 hasta ~10 en todos los tensores (hallazgo C2 de `docs/review.md`); ahora el
 offset por defecto es 0.0 (`boa_offset` sigue siendo un parámetro), los

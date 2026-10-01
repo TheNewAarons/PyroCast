@@ -48,7 +48,7 @@
     "weight_unet": 0.7
   },
   "ece_bins": 10,
-  "git_commit": "cca1e3b6005c171ef6b97a6e0a6b80c0a285d0f5",
+  "git_commit": "c639fe5262d13b7ae1d3f30f7972a37511fc1d45",
   "model_name": "blend",
   "n_bootstrap": 1000,
   "n_events": 2,

@@ -24,11 +24,11 @@ Corrección radiométrica -- CORREGIDA en la revisión independiente (docs/revie
 hallazgo C2): una versión anterior restaba un offset BOA de -1000 a los DN,
 suponiendo que el composite traía el offset del processing baseline 04.00+. Los
 composites REALES que entrega openEO/CDSE ya vienen con el offset aplicado
-(verificado el 2026-10-01 contra los 15 composites descargados: DN mínimos de
-5-15 y valores negativos, imposibles con un offset +1000 presente; mediana de
-RED ~600 y de NIR ~2500). Restar -1000 de nuevo duplicaba la corrección y daba
-NDVI de hasta 5 (mediana ~1.9, con denominadores casi nulos o negativos) en TODOS
-los tensores de evento. El offset por defecto es ahora 0.0 (`boa_offset` sigue
+(verificado el 2026-10-01 contra los 15 composites descargados: DN mínimos entre
+-98 y 36, con valores negativos en 9 de 15, imposibles con un offset +1000
+presente; medianas de RED 267-1012 y de NIR 2316-3159). Restar -1000 de nuevo
+duplicaba la corrección y daba NDVI de hasta ~10 (mediana ~1.8, con denominadores
+casi nulos o negativos) en TODOS los tensores de evento. El offset por defecto es ahora 0.0 (`boa_offset` sigue
 siendo un parámetro explícito por si algún día se usa una fuente con el offset
 sin aplicar), y `compute_and_save_vegetation` rechaza con un error cualquier NDVI
 fuera de [-1, 1] en vez de escribirlo en silencio.

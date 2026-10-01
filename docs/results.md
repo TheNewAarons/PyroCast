@@ -246,12 +246,12 @@ make report             # solo lee bench/results/ y docs/
 
 | archivo | modelo | comando exacto | commit | semilla | remuestreos | eventos |
 |---|---|---|---|---|---|---|
-| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
-| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
-| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
-| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
+| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `c639fe5262d1` | 42 | 1000 | 2 |
+| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `c639fe5262d1` | 42 | 1000 | 2 |
+| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `c639fe5262d1` | 42 | 1000 | 2 |
+| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `c639fe5262d1` | 42 | 1000 | 2 |
 
-Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v6/best.pt --seed 42`, commit `cca1e3b6005c`, generados 2026-10-01T19:06:26Z, checkpoint `runs/finetune_2026_v6/best.pt` (huella sha256 `9ee5e734b2bfe2a9…`), semilla 42, peso U-Net del blend 0.7.
+Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v6/best.pt --seed 42`, commit `c639fe5262d1`, generados 2026-10-01T19:09:40Z, checkpoint `runs/finetune_2026_v6/best.pt` (huella sha256 `9ee5e734b2bfe2a9…`), semilla 42, peso U-Net del blend 0.7.
 
 ### Fechas de los datos usados
 
