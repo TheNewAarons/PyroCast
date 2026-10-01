@@ -4,7 +4,14 @@ Este documento se actualiza con cada hallazgo real de la evaluación
 contra incendios de Chile. Nunca se suaviza ni se elimina una métrica
 negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
 
-## Limitaciones de diseño (conocidas desde el bootstrap, no hallazgos de evaluación)
+## Limitaciones por área
+
+Agrupadas por área del sistema; dentro de cada área, en el orden en que
+se fueron encontrando. Las limitaciones nuevas de la etapa de
+endurecimiento (servido, ingesta, seguridad) están al final. Las ya
+resueltas están en "Resueltas (historial)", no se borran.
+
+### Fuentes de datos, resolución y datos de entrada
 
 - **Resolución de ERA5-Land vs. grilla de trabajo**: ERA5-Land tiene
   resolución nativa de ~9 km. `features/weather/derive.py` la
@@ -67,6 +74,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   resolución de dependencias fuera de Docker, pero nadie ha confirmado
   todavía que el contenedor `api` realmente arranca y pasa su healthcheck
   dentro de Docker real.
+  Actualización (endurecimiento): la imagen ahora incluye `features`, `models` e `ingestion` (arrastra `torch`, imagen pesada) y `serving/web`; tampoco se construyó aquí. El job `docker` de CI es lo que la valida.
 - **Vegetación (Sentinel-2/NDVI): escala a 10 m no probada contra el
   bbox de estudio real**: `features/vegetation/ndvi.py` lee ambas
   bandas del composite completas en memoria (sin lectura por
@@ -82,6 +90,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   contenida (mosaico de WorldCover recortado al bbox, NDVI en float32 en
   vez de float64) se aplicó, pero el procesamiento por bloques y la
   conversión a batch job quedan pendientes — ver `docs/decisions.md`.
+  Mitigación operativa vigente: pasar `--bbox` por evento (como en `docs/backtest-2026.md`) en vez del bbox de estudio completo.
 - **Fuel-type: áreas urbanas asumidas no combustibles**: la clase
   Built-up de WorldCover se mapea a `FUEL_URBANO_NO_COMBUSTIBLE`
   (`ingestion/worldcover/fuel_type.py`) — un supuesto de v1, no una
@@ -90,6 +99,26 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   urbano-forestal (WUI), que es precisamente el escenario detrás de las
   muertes y viviendas destruidas que motivan este proyecto (ver
   CLAUDE.md). Encontrado en la revisión final del 2026-09-26.
+- **ERA5-Land solo cubre tierra: eventos cercanos a la costa producen
+  NaN parcial en los canales de clima incluso en días con datos
+  disponibles** -- verificado contra datos reales de la temporada
+  2025-2026 (revisión final del 2026-09-29): la interpolación bilineal
+  de `features/dataset/pipeline.py::build_dataset_for_event` entre una
+  celda de tierra válida de ERA5-Land y una celda de océano (sin datos)
+  produce NaN en una fracción de píxeles del recorte del evento -- hasta
+  ~13% de los píxeles de clima en el evento más grande de la temporada
+  (`event_1277049523`, cercano a la costa de Biobío). Sin tratar, este
+  NaN envenena la convolución del U-Net en TODA la imagen, no solo en la
+  celda afectada. Se rellena con el promedio de los píxeles VÁLIDOS del
+  archivo fuente COMPLETO (la región de estudio entera, no el recorte
+  del evento, que podría no tener ningún píxel de tierra propio) --
+  `_fill_weather_nan_with_source_mean` en `pipeline.py`. Esto es una
+  imputación real, documentada explícitamente: para un evento muy
+  costero, el clima "local" en la práctica es el promedio regional, no
+  una medición específica de ese punto.
+
+### Estado del fuego y dataset (`features/`)
+
 - **Reconstrucción de eventos de incendio: buffer + interpolación lineal,
   no kriging**: `features/fire_state/` reconstruye la extensión ACTIVA de
   fuego diaria de un evento (no la superficie quemada acumulada — cada
@@ -123,8 +152,9 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   reales**: `spatial_eps_m=750m` y `temporal_eps=2 días`
   (`features/fire_state/clustering.py`) son heurísticas basadas en la
   resolución nominal de VIIRS (375 m, revisita diaria), no un ajuste
-  contra el historial real de incendios de Chile — ese ajuste
-  corresponde a `models/evaluation/` (backtesting), sin implementar.
+  contra el historial real de incendios de Chile — el backtest ya
+  existe (`docs/backtest-2026.md`), pero no se usó para ajustar estos
+  parámetros: siguen sin calibrar.
 - **`features/dataset/`: un único DEM/estudio de área asumido**:
   `resolve_event_sources` espera exactamente un archivo bajo
   `data_processed_dir/dem/` (convención de nombre con hash de
@@ -137,6 +167,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   cercano no existe en absoluto), el canal correspondiente queda en NaN
   para esos días — un dataset con muchos NaN no falla ruidosamente, hay
   que inspeccionarlo. Ver `docs/dataset-card.md`.
+  `serving/` sí falla explícitamente (`weather_unavailable`, `terrain_coverage_unavailable`) si falta un canal que el modelo usa; `build-dataset` no.
 - **`features/dataset/`: cada evento tiene su propia grilla, no la grilla
   de estudio completa**: dos tensores de eventos distintos no son
   comparables píxel a píxel sin un paso de reproyección adicional — ver
@@ -156,6 +187,9 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   historial real de FIRMS de Chile (dos satélites VIIRS pueden detectar
   el mismo incendio con timestamps/coordenadas ligeramente distintos, lo
   cual es correcto que NO se deduplique). Ver `docs/dataset-card.md`.
+
+### Autómata celular (`models/cellular_automata/`)
+
 - **Autómata celular: sin modelo de extinción/consumo de combustible**:
   `models/cellular_automata/simulate.py` trata el estado "en llamas" como
   monótono — una celda encendida nunca se "apaga" dentro del horizonte
@@ -171,6 +205,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   eventos de entrenamiento reales (de `features/dataset/`, que a su vez
   necesita datos ingeridos reales) para producir valores con algún
   sentido — ver `docs/dataset-card.md`.
+  El backtest de `docs/backtest-2026.md` y `serving/` usan estos valores por defecto.
 - **`calibrate.py` solo calibra los tres parámetros escalares**:
   `fuel_flammability` (un dict, no un escalar) no participa del grid
   search — calibrarlo requeriría un espacio de búsqueda combinatorio
@@ -218,10 +253,13 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   alimentarían este simulador en una integración futura con eventos
   reales. Antes de este fix (revisión final del 2026-09-27), un solo
   NaN de elevación se propagaba en silencio y reducía una simulación de
-  55 celdas encendidas a 1, sin ningún aviso. `models/cellular_automata/`
-  todavía no está conectado a `features/dataset/` -- este riesgo no se
-  ha materializado en producción, pero queda cerrado antes de esa
-  integración en vez de esperar a que alguien lo redescubra.
+  55 celdas encendidas a 1, sin ningún aviso. El autómata ya está
+  conectado a eventos reales (backtest y `serving/`): este chequeo es lo
+  que convierte un NaN en un error explícito (en la API, un 422
+  `terrain_coverage_unavailable` / `weather_unavailable`).
+
+### Evaluación y backtest
+
 - **Backtest: la evaluación del día 0 es tautológica por construcción**:
   `CellularAutomatonModel.predict` siembra `initial_burning` desde el
   propio `fire_mask` del día 0 del evento (no hay "día -1" del que
@@ -230,6 +268,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   "acertado" nada. Incluir el día 0 en las métricas agregadas del
   backtest sesga (levemente, hacia arriba) el desempeño reportado. Ver
   `docs/decisions.md`.
+  Las métricas de `docs/results.md` conservan esa convención (incluyen el día 0); su efecto no se cuantificó por separado.
 - **Bootstrap del backtest remuestrea valores por evento, no eventos
   reales ni píxeles**: con pocos eventos de test (realista en las
   primeras corridas de este proyecto), el intervalo de confianza
@@ -261,6 +300,25 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   en la verdad acumulada que usa `run_backtest`. El backtest mide contra
   la mejor proxy disponible con datos abiertos, no contra la superficie
   quemada real.
+- **El autómata celular usado en `docs/backtest-2026.md` NO está
+  calibrado contra incendios reales de Chile** -- `calibrate.py` (P7)
+  sigue sin soportar eventos multi-día reales de `features/dataset/`
+  (su `_score_sample` solo compara un único paso simulado, ver más
+  arriba en este documento); extenderlo a trayectorias multi-día reales
+  quedó fuera de alcance de esta tarea. El backtest reportado usa los
+  parámetros HEURÍSTICOS por defecto (`base_spread_prob=0.3`, etc.), no
+  valores ajustados contra el historial real -- ver `docs/backtest-2026.md`.
+- **El backtest tiene 2 eventos de test, y el "test interno" del dataset de
+  Chile es ese mismo conjunto**: el split 70/15/15 por evento sobre 15
+  eventos deja 2 de test. No hay ninguna evaluación sobre NDWS ni sobre
+  otra temporada. Los intervalos bootstrap con n=2 no sostienen
+  afirmaciones de superioridad de un modelo (ver `docs/results.md`
+  secciones 1 y 5; el análisis de fallas son hipótesis no verificadas).
+- **Selección de eventos por umbral de detecciones (≥40)**: sesga la
+  muestra hacia incendios grandes y bien detectados por VIIRS; no
+  representa la cola larga de incendios pequeños (`docs/backtest-2026.md`).
+
+### Dataset público NDWS y preentrenamiento
 
 - **La humedad relativa derivada de NDWS asume presión estándar a
   nivel del mar (101325 Pa), no la presión real de cada ubicación**:
@@ -320,13 +378,25 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   todavía. Riesgo bajo (un usuario real de NDWS tendrá muchos más de 2
   shards), documentado para no ocultarlo. Encontrado en la revisión
   final del 2026-09-28.
-- **Ningún tiempo de entrenamiento real sobre NDWS o sobre eventos
-  reales de Chile fue medido en esta sesión** -- solo el smoke test
-  sintético (medido, ~8.4s, ver `docs/model-card.md`). El tiempo real
-  depende del tamaño real de cada evento de Chile (variable, no
-  medido) y del volumen real de NDWS descargado (no disponible en este
-  entorno sin red). Cualquier estimación de horas/época en
-  `docs/model-card.md` es un orden de magnitud, no una medición.
+- **El U-Net evaluado se entrenó desde cero, sin preentrenamiento con el
+  dataset público NDWS**: sin credenciales de Kaggle no había dataset
+  público, así que `pyrocast-train finetune` (que permite omitir el
+  checkpoint preentrenado) entrenó un `SmallUNet` nuevo solo sobre ~11
+  eventos reales de Chile, órdenes de magnitud menos que la literatura
+  (NDWS: 18.545 chips). Cualquier resultado débil del U-Net debe leerse
+  a la luz de este tamaño de entrenamiento, no como evidencia de que la
+  arquitectura sea inadecuada. El camino de preentrenamiento NDWS existe
+  en el código pero nunca se ejecutó contra datos reales.
+
+### Entrenamiento del U-Net
+
+- **El tiempo de entrenamiento sobre NDWS nunca se midió**: el único
+  entrenamiento real fue sobre los 11 eventos pequeños de Chile (se
+  registra por época en `history.csv`, columna `seconds`; del orden de
+  1-5 s por época en una máquina sin GPU), más el smoke test sintético
+  (`docs/model-card.md`). Cualquier estimación de horas/época sobre el
+  NDWS completo en `docs/model-card.md` es un orden de magnitud, no una
+  medición.
 - **`batch_size=1` por defecto, sin soporte de relleno/recorte para
   batir eventos de distinto tamaño** -- entrenar con más de un evento
   de Chile por batch requeriría lógica de padding/cropping no
@@ -337,11 +407,6 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   (congelar el encoder)** -- es la opción más conservadora dado el
   desajuste de dominio NDWS/Chile, pero ninguna corrida real comparó
   ambas estrategias en este proyecto todavía.
-- **`shared.model_protocol.FireSpreadModel` no está implementado para
-  SmallUNet** -- el modelo devuelve logits `(batch, 1, H, W)`, no
-  `(day, y, x)` en `[0, 1]` como el Protocol exige; un wrapper que lo
-  implemente (aplicar sigmoid, adaptar la forma) queda para cuando se
-  necesite correr `models/evaluation/backtest.py` contra el U-Net.
 - **`finetune` no resume el estado del optimizador de `pretrain`** --
   cada fase crea un `Adam` nuevo dentro de `train_model`. Es una
   simplificación deliberada (retomar los momentos de Adam ajustados a
@@ -402,12 +467,15 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   irrelevante (cada batch es una muestra), pero con un `batch_size`
   mayor y un dataset cuyo tamaño no es múltiplo exacto, el último batch
   (más chico) pesa lo mismo que los demás en el promedio.
-- **La calibración de esta sesión se corrió únicamente sobre un
-  checkpoint de fixture sintético** (`pyrocast-calibrate run
-  --fixture`) -- ningún checkpoint real entrenado sobre NDWS o eventos
-  de Chile fue calibrado todavía. La tabla antes/después de
-  `docs/calibration.md` prueba que el pipeline funciona de punta a
-  punta, no que el U-Net real está bien calibrado.
+
+### Calibración y ensamble
+
+- **La tabla antes/después de `docs/calibration.md` es de un checkpoint
+  de FIXTURE sintético** (`pyrocast-calibrate run --fixture`): prueba
+  que el pipeline funciona de punta a punta, no que el U-Net real esté
+  bien calibrado. La calibración del checkpoint real
+  (`runs/finetune_2026_v2`, `--chile-val`, solo 2 eventos de val) está
+  en `docs/results.md` sección 3.
 - **Sin split de calibración separado del de validación** -- ver
   `docs/decisions.md`. El ECE post-calibración de `make calibrate` da
   0.0000 exacto (1024 celdas de fixture), y esto es estructural, NO un
@@ -418,6 +486,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   construido en este plan porque el enunciado pide explícitamente
   ajustar y comparar "sobre el set de validación" (ver
   `docs/decisions.md`).
+  `docs/results.md` reporta además la calibración sobre test (fuera de muestra) para no presentar el ECE≈0 de val como evidencia.
 - **`CalibratedUNet` no valida `in_channels` contra el tensor de
   entrada antes de fallar** -- mismo patrón (y misma limitación
   todavía sin resolver) que `models/deep/train.py::finetune`, ya
@@ -442,55 +511,64 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
   real** (`--checkpoint` + `--shard-dir`), a diferencia de
   `pyrocast-train pretrain`, que sí lo tiene por la misma razón (el
   dataset NDWS completo pesa ~4.1 GB, ver `docs/model-card.md`).
-- ~~El CLI de calibración no soporta calibrar contra un set de
-  validación real de eventos de Chile~~ -- resuelto para
-  `docs/backtest-2026.md`: `pyrocast-calibrate run --checkpoint
-  ... --chile-val` reutiliza `models/deep/train.py::ChileFinetuneDataset`.
-- **`pyrocast-train finetune` exigía siempre un checkpoint preentrenado**
-  -- sin dataset público disponible (sin credenciales de Kaggle/NDWS,
-  ver `docs/backtest-2026.md`), no había forma de entrenar un U-Net
-  directamente sobre eventos de Chile. Resuelto: `pretrained_checkpoint`
-  es ahora opcional; sin él, entrena un `SmallUNet` nuevo desde cero.
-  Esto significa que el U-Net de `docs/backtest-2026.md` NUNCA vio el
-  dataset público NDWS -- solo ~11 eventos reales de Chile, un dataset
-  de entrenamiento órdenes de magnitud más chico que el usado en la
-  literatura (NDWS: 18.545 chips). Cualquier resultado débil del U-Net
-  debe considerarse a la luz de este tamaño de entrenamiento, no como
-  evidencia de que la arquitectura en sí sea inadecuada.
-- **`pyrocast-models backtest` solo corría el autómata celular
-  hardcodeado, y no registraba el comando exacto ni el commit de git en
-  `bench/results/*.json`** -- ambos requisitos de `docs/backtest-2026.md`
-  (reproducibilidad). Resuelto: `--model unet` corre `CalibratedUNet`;
-  todo resultado incluye `"command"` y `"git_commit"`.
-- **El autómata celular usado en `docs/backtest-2026.md` NO está
-  calibrado contra incendios reales de Chile** -- `calibrate.py` (P7)
-  sigue sin soportar eventos multi-día reales de `features/dataset/`
-  (su `_score_sample` solo compara un único paso simulado, ver más
-  arriba en este documento); extenderlo a trayectorias multi-día reales
-  quedó fuera de alcance de esta tarea. El backtest reportado usa los
-  parámetros HEURÍSTICOS por defecto (`base_spread_prob=0.3`, etc.), no
-  valores ajustados contra el historial real -- ver `docs/backtest-2026.md`.
-- **ERA5-Land solo cubre tierra: eventos cercanos a la costa producen
-  NaN parcial en los canales de clima incluso en días con datos
-  disponibles** -- verificado contra datos reales de la temporada
-  2025-2026 (revisión final del 2026-09-29): la interpolación bilineal
-  de `features/dataset/pipeline.py::build_dataset_for_event` entre una
-  celda de tierra válida de ERA5-Land y una celda de océano (sin datos)
-  produce NaN en una fracción de píxeles del recorte del evento -- hasta
-  ~13% de los píxeles de clima en el evento más grande de la temporada
-  (`event_1277049523`, cercano a la costa de Biobío). Sin tratar, este
-  NaN envenena la convolución del U-Net en TODA la imagen, no solo en la
-  celda afectada. Se rellena con el promedio de los píxeles VÁLIDOS del
-  archivo fuente COMPLETO (la región de estudio entera, no el recorte
-  del evento, que podría no tener ningún píxel de tierra propio) --
-  `_fill_weather_nan_with_source_mean` en `pipeline.py`. Esto es una
-  imputación real, documentada explícitamente: para un evento muy
-  costero, el clima "local" en la práctica es el promedio regional, no
-  una medición específica de ese punto.
+- **Ensamble CA + U-Net: pesos ajustados sobre un val contaminado**: el
+  peso del blend y los coeficientes del stacking (`models/deep/ensemble.py`)
+  se ajustan sobre los 2 eventos de val, los mismos que calibraron el
+  calibrador isotónico del U-Net: las salidas del U-Net ahí son
+  optimistas y sesgan el ensamble a favorecerlo. Con n=2 en val y n=2 en
+  test no hay validación cruzada posible; la ventaja del stacking
+  (`docs/backtest-2026.md` sección 8) no es concluyente y por eso el
+  ensamble no es el modelo por defecto de `serving/`.
 
-## Ensamble CA + U-Net: pesos ajustados sobre un val contaminado
+### Servido: API y mapa web (`serving/`)
 
-El peso del blend y los coeficientes del stacking (`models/deep/ensemble.py`) se ajustan sobre los 2 eventos de val, los mismos que calibraron el calibrador isotónico del U-Net: las salidas del U-Net ahí son optimistas y sesgan el ensamble a favorecerlo. Con n=2 en val y n=2 en test no hay validación cruzada posible; la ventaja del stacking (`docs/backtest-2026.md` sección 8) no es concluyente.
+- **`/predict` no pronostica: solo usa clima ya procesado**: ERA5-Land es
+  un reanálisis histórico, no un pronóstico, y la API no lo descarga bajo
+  demanda (una solicitud a CDS tarda minutos y requiere credenciales).
+  Fechas recientes o futuras sin clima procesado devuelven
+  `weather_unavailable`. Un uso real de pronóstico necesitaría una fuente
+  de pronóstico meteorológico (p. ej. GFS/ECMWF IFS) que no está integrada.
+- **Ignición de una sola celda, horizonte máximo de 7 días y
+  probabilidades no calibradas**: `/predict` marca solo la celda de 250 m
+  que contiene el punto (no un perímetro), y el modelo servido (autómata
+  celular) no está calibrado: sus probabilidades son un puntaje relativo
+  (`docs/api.md`, `docs/backtest-2026.md`).
+- **Caché de predicciones en memoria, sin expiración ni invalidación**: se
+  pierde al reiniciar y no se entera de que se re-ingirieron datos
+  (`docs/api.md`).
+- **La API no tiene autenticación ni límite de tasa**: pensada para uso
+  local o de investigación. `/active-fires` consume la `FIRMS_MAP_KEY` del
+  servidor (con caché de 10 min por la cuota de 5000 transacciones/10 min).
+  CORS no se habilita por defecto; no hay CSP.
+- **La interfaz web no se probó con un navegador automatizado**: hay tests
+  de servidor (página, estáticos, endpoints) y la sintaxis del JS se
+  verificó, pero el flujo clic → predicción → deslizador solo se validó
+  contra las respuestas de la API, no con un navegador real. Depende de
+  CDN externos (Leaflet en unpkg con SRI, teselas de OpenStreetMap).
+
+### Ingesta: robustez y seguridad
+
+- **La clasificación de errores de ERA5-Land y Sentinel-2 no se verificó
+  contra errores reales**: cuota agotada, credenciales inválidas y fallas
+  transitorias se distinguen por el texto del error (`cdsapi`) o por el
+  código HTTP (`openeo`), cubiertos con fakes; nunca se forzó una cuota
+  real. Un mensaje de formato inesperado cae en el error genérico (sigue
+  siendo un mensaje claro, sin traceback ni credenciales).
+- **Los reintentos están acotados y una falla persistente aborta el
+  comando**: es deliberado (seguir con un tile o mes faltante dejaría un
+  hueco silencioso). Solo un 404 de tile (DEM, WorldCover) se tolera. Lo
+  ya descargado queda en caché y se reutiliza (tiles, tramos mensuales
+  de ERA5, consultas de FIRMS; para FIRMS el CLI indica desde qué fecha
+  reanudar).
+- **`pip-audit` solo detecta vulnerabilidades conocidas en las
+  dependencias bloqueadas (`uv.lock`)**: no escanea la imagen Docker ni
+  el código propio, y no reemplaza una revisión de seguridad.
+
+## Resueltas (historial)
+
+- ~~`shared.model_protocol.FireSpreadModel` no está implementado para SmallUNet~~ -- resuelto: `CalibratedUNet` (`models/deep/calibration.py`) lo implementa (sigmoid, calibración, predicción autorregresiva).
+- ~~El CLI de calibración no soporta calibrar contra un set de validación real de eventos de Chile~~ -- resuelto: `pyrocast-calibrate run --checkpoint ... --chile-val`.
+- ~~`pyrocast-models backtest` solo corría el autómata celular y no registraba comando ni commit~~ -- resuelto: `--model unet|blend|stacking`, y todo resultado de `bench/results/` incluye `"command"` y `"git_commit"`.
 
 ## Herramienta de investigación
 

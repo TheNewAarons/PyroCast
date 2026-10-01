@@ -123,3 +123,20 @@ def test_app_js_reads_urls_from_html_and_renders_errors_safely(client):
     js = client.get("/static/app.js").text
     assert "dataset.predictUrl" in js and "dataset.activeFiresUrl" in js
     assert "innerHTML" not in js  # texto del backend siempre con textContent
+
+
+def test_demo_dataset_generator_produces_data_the_api_can_serve(tmp_path, model_loader):
+    """Lo que `make demo` genera sirve para /predict (el README lo promete)."""
+    from serving.demo_data import DEMO_DAYS, DEMO_FIRST_DAY, write_demo_dataset
+
+    from .conftest import make_settings
+
+    processed = write_demo_dataset(tmp_path / "demo" / "processed")
+    with TestClient(create_app(settings=make_settings(processed), model_loader=model_loader)) as c:
+        body = c.post("/predict", json={
+            "lat": IGNITION_LAT, "lon": IGNITION_LON, "date": DEMO_FIRST_DAY.isoformat(),
+            "horizon_days": DEMO_DAYS - 1,
+        }).json()
+        page = c.get("/").text
+    assert body["research_tool"] is True and len(body["days"]) == DEMO_DAYS - 1
+    assert DEMO_FIRST_DAY.isoformat() in page

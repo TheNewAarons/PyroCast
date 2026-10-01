@@ -53,7 +53,7 @@ LIMITATION_TOPICS: tuple[tuple[str, str, str], ...] = (
     ("Downscaling de ERA5-Land (~9 km → 250 m)", r"Resolución de ERA5-Land", ""),
     ("Reconstrucción simplificada del estado del fuego", r"Reconstrucción de eventos", ""),
     ("Dependencia de un dataset público externo para preentrenar",
-     r"Kaggle", r"Kaggle"),
+     r"sin preentrenamiento", r"Kaggle"),
     ("Ausencia de validación operativa con CONAF/SENAPRED",
      r"CONAF|SENAPRED|operativ", r"SENAPRED"),
 )
@@ -731,6 +731,60 @@ def _related(doc: Doc, inp: Inputs) -> None:
     doc.ul(items)
 
 
+# -------------------------------------------------------------- README
+README_START = "<!-- results-summary:start (generado por `make report`, no editar a mano) -->"
+README_END = "<!-- results-summary:end -->"
+
+
+def render_readme_summary(inp: Inputs) -> str:
+    """Resumen corto para el README: misma fuente (bench/results/) que el
+    reporte completo, así el README no puede desincronizarse a mano."""
+    models = _ordered(inp.results)
+    if not models:
+        return "No hay resultados de backtest en `bench/results/`."
+    n = sorted({inp.results[m]["n_events"] for m in models})
+    rows = [
+        [_label(m)] + [f"{inp.results[m]['aggregate'][k]['point_estimate']:.3f}" for k in METRICS]
+        for m in models
+    ]
+    header = ["Modelo"] + [METRIC_LABEL[k] for k in METRICS]
+    table = "\n".join(
+        ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+        + ["| " + " | ".join(r) + " |" for r in rows]
+    )
+    indistinct = [
+        METRIC_LABEL[k] for k in METRICS
+        if _all_overlap([inp.results[m]["aggregate"][k] for m in models])
+    ]
+    note = (
+        f"Backtest sobre incendios reales de Chile 2025-2026, media sobre "
+        f"**{', '.join(str(x) for x in n)} eventos de test**. "
+        + (f"En {', '.join(indistinct)} todos los intervalos se solapan. " if indistinct else "")
+        + "Con tan pocos eventos **no es una comparación estadísticamente robusta**: ningún "
+        "modelo queda demostrado como mejor. Intervalos, mapas, calibración y análisis de "
+        "fallas en [`docs/results.md`](docs/results.md)."
+    )
+    return f"{table}\n\n{note}"
+
+
+def _all_overlap(cis: list[dict[str, float]]) -> bool:
+    return max(c["lower"] for c in cis) <= min(c["upper"] for c in cis)
+
+
+def update_readme(readme_path: Path, summary: str) -> bool:
+    """Reemplaza el bloque entre los marcadores; False si no hay README o
+    marcadores (no se toca nada)."""
+    if not readme_path.exists():
+        return False
+    text = readme_path.read_text()
+    if README_START not in text or README_END not in text:
+        return False
+    before, rest = text.split(README_START, 1)
+    _, after = rest.split(README_END, 1)
+    readme_path.write_text(f"{before}{README_START}\n{summary}\n{README_END}{after}")
+    return True
+
+
 # ---------------------------------------------------------------- principal
 def _save(fig: Any, inp: Inputs, filename: str) -> None:
     out = _FIG_DIR[0]
@@ -745,7 +799,8 @@ _FIG_DIR: list[Path] = [Path("docs/figures")]
 
 
 def build_report(
-    results_dir: Path, docs_dir: Path, out_dir: Path | None = None
+    results_dir: Path, docs_dir: Path, out_dir: Path | None = None,
+    readme_path: Path | None = None,
 ) -> tuple[Path, Path]:
     """Escribe `results.md`, `results.html` y `figures/*.png` en `out_dir`
     (por defecto `docs_dir`). Devuelve las rutas de md y html."""
@@ -771,4 +826,8 @@ def build_report(
     md_path, html_path = out_dir / "results.md", out_dir / "results.html"
     md_path.write_text(render_markdown(doc))
     html_path.write_text(render_html(doc, out_dir / "figures", "PyroCast — resultados"))
+    update_readme(
+        readme_path if readme_path is not None else docs_dir.parent / "README.md",
+        render_readme_summary(inp),
+    )
     return md_path, html_path

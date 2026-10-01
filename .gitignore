@@ -32,3 +32,6 @@ runs/
 
 # superpowers scratch workspace
 .superpowers/
+
+# Datos sintéticos de `make demo`
+demo_data/

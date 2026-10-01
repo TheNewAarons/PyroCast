@@ -86,6 +86,8 @@ make report                        # genera docs/results.md y .html (solo lee be
 make report-artifacts               # calcula curvas/mapas/descriptores desde checkpoint + datos (los deja en bench/results/)
 make serve                          # levanta la API + mapa web
 make test / lint / typecheck
+make audit                           # pip-audit sobre uv.lock (también corre en CI)
+make demo                             # API + mapa con datos SINTÉTICOS, sin credenciales
 ```
 
 ## Forma de trabajar

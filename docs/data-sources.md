@@ -1,5 +1,39 @@
 # Fuentes de datos
 
+## Licencias y atribución (resumen)
+
+Todas las fuentes son abiertas y gratuitas. **Este repositorio no
+redistribuye ningún dato**: `data/` está en `.gitignore` y cada persona
+descarga los datos por su cuenta con sus propias credenciales. Aun así,
+cualquier resultado, mapa o publicación derivada debe llevar las
+atribuciones de abajo. Última verificación contra las páginas oficiales:
+**2026-10-01** (las URL están en la columna "Fuente de la licencia"); la
+columna "Verificado" dice qué se confirmó ese día y qué no.
+
+| Fuente | Licencia / términos | Atribución requerida | Fuente de la licencia | Verificado |
+|---|---|---|---|---|
+| **NASA FIRMS** (VIIRS 375 m) | Política de datos abiertos de NASA (uso libre, sin restricción de redistribución); la API exige un `MAP_KEY` gratuito | "We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System (FIRMS) (https://earthdata.nasa.gov/firms), part of NASA's Earth Science Data and Information System (ESDIS)." Para VIIRS 375 m, citar además a Schroeder et al. (2014), *Remote Sensing of Environment* 143, 85-96, doi:10.1016/j.rse.2013.12.008 | [Earthdata: Data Use and Citation Guidance](https://www.earthdata.nasa.gov/learn/find-data/near-real-time/citation) | Texto de agradecimiento confirmado; la cita de Schroeder et al. es la que indica la documentación de FIRMS pero no se re-verificó la página ese día |
+| **Copernicus DEM GLO-30** | Licencia Copernicus DEM: GLO-30 "Public" libre para el público general bajo los términos de su licencia (es decir, no es dominio público) | "© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved". Si los datos se modifican (aquí se remuestrean y derivan pendiente/orientación): "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved". Citar además "Copernicus Digital Elevation Model (DEM) was accessed on `FECHA` from https://registry.opendata.aws/copernicus-dem" | [Registro AWS Open Data](https://registry.opendata.aws/copernicus-dem/) y el texto de licencia que enlaza | Aviso de atribución y texto de acceso confirmados (resultados de búsqueda y registro AWS); **el documento de licencia completo no se leyó** — leerlo antes de redistribuir derivados |
+| **ERA5-Land** (Copernicus CDS) | CC BY 4.0 ("CC-BY licence" en la página del dataset); además se deben aceptar los términos del dataset en el sitio de CDS antes de descargar | Citar: Muñoz Sabater, J. (2019): *ERA5-Land hourly data from 1950 to present*. Copernicus Climate Change Service (C3S) Climate Data Store (CDS), doi:10.24381/cds.e2161bac; y el artículo Muñoz-Sabater et al. (2021), *Earth System Science Data* 13, 4349-4383, doi:10.5194/essd-13-4349-2021. Aviso recomendado de C3S: "Generated using Copernicus Climate Change Service information [año]" | [CDS: ERA5-Land hourly](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land) | Licencia y DOI confirmados en la página del dataset; el texto exacto del aviso de C3S no estaba en la página consultada (es el aviso estándar de C3S) |
+| **Sentinel-2 L2A** (Copernicus Data Space Ecosystem, vía openEO) | Datos Sentinel de Copernicus: acceso "libre, completo y abierto" (Legal Notice on the use of Copernicus Sentinel Data); el uso de la plataforma CDSE se rige además por sus términos de uso y por su política de créditos/cuotas | Datos modificados (aquí: composición mensual + NDVI): "Contains modified Copernicus Sentinel data [año]". Sin modificar: "Copernicus Sentinel data [año]" | [Copernicus Sentinel data licence](https://cds.climate.copernicus.eu/licences/ec-sentinel); [Legal notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice) | Fórmulas de atribución confirmadas; los términos de uso de CDSE (cuotas) no se leyeron completos |
+| **ESA WorldCover 10 m 2021 v200** | CC BY 4.0 | "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium". Citar: Zanaga, D. et al. (2022). *ESA WorldCover 10 m 2021 v200*. doi:10.5281/zenodo.7254221; y "ESA WorldCover was accessed on `FECHA` from https://registry.opendata.aws/esa-worldcover-vito" | [Registro AWS Open Data](https://registry.opendata.aws/esa-worldcover-vito/) y [esa-worldcover.org/data-access](https://esa-worldcover.org/en/data-access) | Licencia, DOI y textos de atribución confirmados |
+| **Next Day Wildfire Spread (NDWS)** — dataset público de preentrenamiento, vía Kaggle | CC BY 4.0 | Citar: Huot, F., Hu, R. L., Goyal, N., Sankar, T., Ihme, M., Chen, Y.-F. (2022). "Next Day Wildfire Spread: A Machine Learning Dataset to Predict Wildfire Spreading From Remote-Sensing Data". *IEEE Transactions on Geoscience and Remote Sensing* 60, 1-13 | [Kaggle: Next Day Wildfire Spread](https://www.kaggle.com/datasets/fantineh/next-day-wildfire-spread); detalle en `docs/public-dataset.md` | Licencia y cita confirmadas en fuentes secundarias (la página de Kaggle exige navegador autenticado y no se pudo leer directamente). **El U-Net evaluado en `docs/results.md` NO usó este dataset** (se entrenó desde cero con eventos de Chile); el código de preentrenamiento existe pero nunca se corrió con datos reales |
+
+**Otras atribuciones de la interfaz web** (`serving/web/`): las teselas
+del mapa son de OpenStreetMap — "© OpenStreetMap contributors" (ODbL;
+[copyright](https://www.openstreetmap.org/copyright)), ya incluido en la
+atribución del mapa; el servidor público de teselas de OSM tiene una
+[política de uso](https://operations.osmfoundation.org/policies/tiles/)
+(adecuada para uso de investigación local, no para tráfico masivo).
+Leaflet se carga desde unpkg con SRI (licencia BSD-2-Clause).
+
+**Derivados que produce este proyecto** (`docs/results.md`, mapas de la
+interfaz, tensores Zarr) mezclan varias de estas fuentes: mantener todas
+las atribuciones aplicables al compartirlos. Los modelos entrenados
+heredan la condición de atribución de CC BY 4.0 de sus datos de
+entrenamiento si se redistribuyen.
+
+
 ## NASA FIRMS
 
 **Qué entrega:** detecciones activas de fuego casi en tiempo real

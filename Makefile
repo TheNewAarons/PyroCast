@@ -1,6 +1,6 @@
 .PHONY: up down ingest-firms ingest-terrain ingest-weather ingest-vegetation \
         build-dataset run-ca train calibrate backtest report report-artifacts serve \
-        test lint typecheck audit
+        test lint typecheck audit demo
 
 up:
 	docker compose up -d
@@ -64,6 +64,17 @@ report-artifacts:
 serve:
 	# desarrollo local: solo loopback (el contenedor expone 0.0.0.0 por su cuenta) y /docs activo
 	ENVIRONMENT=development uv run --package serving uvicorn serving.api.main:app --reload --host 127.0.0.1 --port 8000
+
+# Demo SIN credenciales: datos sintéticos (demo_data/, ignorado por git) + API en
+# http://127.0.0.1:8000 con claves de relleno. /active-fires fallará con un mensaje
+# claro (no hay FIRMS real); /predict y el mapa funcionan. NO son datos reales.
+demo:
+	uv run --package serving python -m serving.demo_data demo_data/processed
+	FIRMS_MAP_KEY=demo CDS_API_URL=https://cds.climate.copernicus.eu/api CDS_API_KEY=demo \
+	COPERNICUS_DATASPACE_CLIENT_ID=demo COPERNICUS_DATASPACE_CLIENT_SECRET=demo \
+	POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_DB=pyrocast POSTGRES_USER=pyrocast \
+	POSTGRES_PASSWORD=demo DATA_PROCESSED_DIR=demo_data/processed ENVIRONMENT=development \
+	uv run --package serving uvicorn serving.api.main:app --host 127.0.0.1 --port 8000
 
 test:
 	uv run --package shared pytest shared/tests -v

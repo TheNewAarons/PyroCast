@@ -176,12 +176,12 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - **Resolución 250 m / diaria en vez de 30 m / 3 h** — *Resolución espacio-temporal reducida frente a la literatura*: el paper de referencia (WildfireCube) trabaja a 30 m / 3 h. PyroCast usa 250 m / diario por ser un proyecto de una sola persona; esto es una simplificación deliberada, no una réplica del estado del arte, y los resultados no son directamente comparables a los de ese paper.
 - **Downscaling de ERA5-Land (~9 km → 250 m)** — *Resolución de ERA5-Land vs. grilla de trabajo*: ERA5-Land tiene resolución nativa de ~9 km. `features/weather/derive.py` la reproyecta y remuestrea a la grilla de 250 m del proyecto mediante interpolación bilineal — un downscaling puramente geométrico, **no** una modelación física de procesos atmosféricos de sub-grilla. Los campos de viento/temperatura/humedad/precipitación tendrán variabilidad espacial artificialmente suave dentro de cada celda de 9 km original; la variabilidad real por debajo de esa escala simplemente no está en los datos de origen. […]
 - **Reconstrucción simplificada del estado del fuego** — *Reconstrucción de eventos de incendio: buffer + interpolación lineal, no kriging*: `features/fire_state/` reconstruye la extensión ACTIVA de fuego diaria de un evento (no la superficie quemada acumulada — cada máscara diaria es independiente, no incluye lo ya quemado en días anteriores) con un buffer espacial fijo alrededor de cada detección FIRMS más interpolación temporal lineal (equivalente a unión de máscaras) entre días con detección — WildfireCube (paper de referencia) usa kriging espaciotemporal, que estima incertidumbre espacial y produce una reconstrucción más plausible físicamente. […]
-- **Dependencia de un dataset público externo para preentrenar** — *`models/deep/tfrecord_reader.py` nunca se probó contra un archivo real descargado de Kaggle*: -- este entorno no tiene acceso de red para descargarlo. Verificado en tres niveles distintos (ver `docs/public-dataset.md` para el detalle): el CRC32C y su fórmula de máscara están verificados contra el vector de control ESTÁNDAR de la especificación (no solo contra el encoder de test propio, que duplica la misma implementación y por eso no podía por sí solo detectar un polinomio o máscara incorrectos -- corregido en la revisión final del 2026-09-28, antes solo había verificación por round-trip); […]
+- **Dependencia de un dataset público externo para preentrenar** — *El U-Net evaluado se entrenó desde cero, sin preentrenamiento con el dataset público NDWS*: sin credenciales de Kaggle no había dataset público, así que `pyrocast-train finetune` (que permite omitir el checkpoint preentrenado) entrenó un `SmallUNet` nuevo solo sobre ~11 eventos reales de Chile, órdenes de magnitud menos que la literatura (NDWS: 18.545 chips). Cualquier resultado débil del U-Net debe leerse a la luz de este tamaño de entrenamiento, no como evidencia de que la arquitectura sea inadecuada. El camino de preentrenamiento NDWS existe en el código pero nunca se ejecutó contra datos reales.
 - **Ausencia de validación operativa con CONAF/SENAPRED** — `docs/limitations.md` declara que esta es una herramienta de investigación y que cualquier uso operativo requiere validación de CONAF/SENAPRED; no se hizo ninguna validación operativa.
 
 **Además** (de la evaluación, no solo del diseño): n = 2 eventos de test; autómata celular sin calibrar contra incendios reales; U-Net entrenado desde cero con eventos de Chile; pesos del ensamble ajustados sobre un val que también calibró el U-Net. Ver `docs/backtest-2026.md` y `docs/limitations.md`.
 
-`docs/limitations.md` registra 62 limitaciones en total. Títulos:
+`docs/limitations.md` registra 71 limitaciones en total. Títulos:
 
 - Resolución de ERA5-Land vs. grilla de trabajo
 - Humedad relativa de ERA5-Land es aproximada, no medida
@@ -193,6 +193,7 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - `docker compose up` no verificado end-to-end
 - Vegetación (Sentinel-2/NDVI): escala a 10 m no probada contra el bbox de estudio real
 - Fuel-type: áreas urbanas asumidas no combustibles
+- ERA5-Land solo cubre tierra: eventos cercanos a la costa producen NaN parcial en los canales de clima incluso en días con datos disponibles
 - Reconstrucción de eventos de incendio: buffer + interpolación lineal, no kriging
 - El buffer de rasterización es un radio de 375 m, no el "tamaño de píxel"
 - El "encadenamiento" (chaining) del clustering no tiene límite temporal ni espacial acotado por evento
@@ -215,6 +216,9 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - `ece_score` con probabilidades sin calibrar en absoluto
 - El autómata celular sigue sin modelar extinción, y el backtest ya no penaliza esa simplificación como si fuera un error adicional (pero la simplificación en sí sigue ahí)
 - Acumular detecciones FIRMS día a día como proxy de "superficie quemada acumulada" no es lo mismo que la superficie quemada acumulada real
+- El autómata celular usado en `docs/backtest-2026.md` NO está calibrado contra incendios reales de Chile
+- El backtest tiene 2 eventos de test, y el "test interno" del dataset de Chile es ese mismo conjunto
+- Selección de eventos por umbral de detecciones (≥40)
 - La humedad relativa derivada de NDWS asume presión estándar a nivel del mar (101325 Pa), no la presión real de cada ubicación
 - `fuel_type` de las muestras de NDWS es SIEMPRE "desconocido" (código 99)
 - `models/deep/tfrecord_reader.py` nunca se probó contra un archivo real descargado de Kaggle
@@ -222,10 +226,10 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - El decodificador protobuf de `tfrecord_reader.py` no soporta `float_list` no empaquetado (wire type 5) ni un campo `packed` partido en varios chunks length-delimited del mismo número de campo
 - Features que no son `float_list` (p. ej. `int64_list`) se descartan en silencio
 - `split_public_dataset` con menos de 2 shards da `val` vacío sin aviso
-- Ningún tiempo de entrenamiento real sobre NDWS o sobre eventos reales de Chile fue medido en esta sesión
+- El U-Net evaluado se entrenó desde cero, sin preentrenamiento con el dataset público NDWS
+- El tiempo de entrenamiento sobre NDWS nunca se midió
 - `batch_size=1` por defecto, sin soporte de relleno/recorte para batir eventos de distinto tamaño
 - La decisión de fine-tuning (sin capas congeladas, learning rate reducido) no está validada empíricamente contra la alternativa (congelar el encoder)
-- `shared.model_protocol.FireSpreadModel` no está implementado para SmallUNet
 - `finetune` no resume el estado del optimizador de `pretrain`
 - `ChileFinetuneDataset` con `batch_size > 1` sobre eventos de distinto tamaño espacial fallaría en el collate de `DataLoader`
 - `pretrain`/`finetune` ahora EXIGEN un split de val no vacío (corregido en la revisión final del 2026-09-29 -- antes, un val vacío hacía que `val_loss` se reportara como `0.0` fabricado, arruinando early stopping y dejando `best.pt` sin entrenar de verdad, en silencio)
@@ -235,16 +239,21 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - Reentrenar sobre un `run_dir` ya usado mezcla dos corridas
 - `finetune` no valida que `in_channels` del checkpoint coincida con el tensor de Chile antes de fallar
 - La pérdida promedio por época promedia sobre BATCHES, no sobre muestras
-- La calibración de esta sesión se corrió únicamente sobre un checkpoint de fixture sintético
+- La tabla antes/después de `docs/calibration.md` es de un checkpoint de FIXTURE sintético
 - Sin split de calibración separado del de validación
 - `CalibratedUNet` no valida `in_channels` contra el tensor de entrada antes de fallar
 - El día 0 de `CalibratedUNet.predict` y de `CellularAutomatonModel.predict` no son bit-idénticos, pese a compartir el mismo convenio de "el día 0 es el ancla conocida"
 - `_checkpoint_fingerprint` carga el checkpoint completo en memoria para hashear su `state_dict`
 - El CLI de calibración no soporta `--max-samples` para la ruta NDWS real
-- `pyrocast-train finetune` exigía siempre un checkpoint preentrenado
-- `pyrocast-models backtest` solo corría el autómata celular hardcodeado, y no registraba el comando exacto ni el commit de git en `bench/results/*.json`
-- El autómata celular usado en `docs/backtest-2026.md` NO está calibrado contra incendios reales de Chile
-- ERA5-Land solo cubre tierra: eventos cercanos a la costa producen NaN parcial en los canales de clima incluso en días con datos disponibles
+- Ensamble CA + U-Net: pesos ajustados sobre un val contaminado
+- `/predict` no pronostica: solo usa clima ya procesado
+- Ignición de una sola celda, horizonte máximo de 7 días y probabilidades no calibradas
+- Caché de predicciones en memoria, sin expiración ni invalidación
+- La API no tiene autenticación ni límite de tasa
+- La interfaz web no se probó con un navegador automatizado
+- La clasificación de errores de ERA5-Land y Sentinel-2 no se verificó contra errores reales
+- Los reintentos están acotados y una falla persistente aborta el comando
+- `pip-audit` solo detecta vulnerabilidades conocidas en las dependencias bloqueadas (`uv.lock`)
 
 ## 7. Metodología y reproducibilidad
 

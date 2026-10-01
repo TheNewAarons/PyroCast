@@ -19,6 +19,16 @@ esta sesión no tuvo forma de descargar ni entrenar (ver
 el pipeline funciona de punta a punta, no como una medición de qué tan
 bien calibrado está el U-Net real.
 
+## Calibración del checkpoint real
+
+Las tablas de más abajo son del checkpoint de **fixture** sintético. La
+calibración del U-Net real (`runs/finetune_2026_v2`, `pyrocast-calibrate
+run --checkpoint ... --chile-val`, sobre los 2 eventos de val) y su
+efecto fuera de muestra (sobre los eventos de test) están en
+`docs/results.md`, sección 3, generada desde `bench/results/`. Allí el
+ECE "después" sobre val se rotula como conjunto de ajuste (cerca de 0 por
+construcción) y solo la fila de test mide calibración fuera de muestra.
+
 ## Enfoque
 
 1. Se corre el checkpoint sobre cada muestra del set de validación

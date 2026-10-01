@@ -103,7 +103,7 @@ LIMITATIONS = """# Limitaciones conocidas
   30 m / 3 h. Texto UNICO-RESOLUCION.
 - **Resolución de ERA5-Land vs. grilla de trabajo**: downscaling bilineal UNICO-ERA5.
 - **Reconstrucción de eventos de incendio: buffer**: UNICO-RECONSTRUCCION.
-- **El lector nunca se probó contra un archivo real de Kaggle**: UNICO-NDWS.
+- **El U-Net se entrenó desde cero, sin preentrenamiento**: UNICO-NDWS.
 
 ## Herramienta de investigación
 
@@ -286,3 +286,33 @@ def test_artifacts_to_report_end_to_end_with_fixture_checkpoint(tmp_path, monkey
     text = md.read_text()
     assert "map_test_6.png" in text and "calibration_unet.png" in text
     assert "No hay resultados de backtest" in text  # sin JSON de modelos en este bench
+
+
+def test_readme_summary_block_is_generated_from_results_and_leaves_the_rest_intact(
+    workspace, tmp_path
+):
+    from models.evaluation.report import README_END, README_START
+
+    results, docs = workspace
+    readme = docs.parent / "README.md"
+    readme.write_text(f"# Titulo\n\ntexto previo\n\n{README_START}\nVIEJO\n{README_END}\n\ncola\n")
+    build_report(results, docs, tmp_path / "out")
+    text = readme.read_text()
+    assert "VIEJO" not in text and text.startswith("# Titulo\n\ntexto previo")
+    assert text.rstrip().endswith("cola")
+    for model in MODELS:
+        iou = json.loads((results / f"{model}.json").read_text())["aggregate"]["iou"]
+        assert f"{iou['point_estimate']:.3f}" in text
+    assert "no es una comparación estadísticamente robusta" in text
+    first = readme.read_text()
+    build_report(results, docs, tmp_path / "out2")
+    assert readme.read_text() == first  # idempotente
+
+
+def test_readme_without_markers_or_missing_is_left_alone(workspace, tmp_path):
+    results, docs = workspace
+    build_report(results, docs, tmp_path / "out")  # sin README: no falla
+    readme = docs.parent / "README.md"
+    readme.write_text("sin marcadores\n")
+    build_report(results, docs, tmp_path / "out2")
+    assert readme.read_text() == "sin marcadores\n"
