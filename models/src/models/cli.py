@@ -14,6 +14,7 @@ from sqlalchemy import create_engine
 from models.cellular_automata.model import CellularAutomatonModel
 from models.cellular_automata.simulate import simulate_fire_spread
 from models.deep.calibration import CalibratedUNet, default_calibration_path
+from models.deep.ensemble import BlendEnsemble, StackingEnsemble, select_blend_weight
 from models.evaluation.backtest import BacktestResult, run_backtest
 from models.evaluation.db import persist_backtest_run
 
@@ -105,18 +106,22 @@ def _trim_to_first_fire_day(event: xr.DataArray) -> xr.DataArray:
     return event.isel(day=slice(first_fire_day, None))
 
 
-def load_test_events(dataset_dir: Path) -> list[xr.DataArray]:
-    """Lee `splits.json` + los eventos Zarr del split "test", por la
-    misma convención de rutas que `features/dataset/` ya establece --
-    recortando el padding previo sin fuego de cada evento (ver
-    `_trim_to_first_fire_day`)."""
+def load_split_events(dataset_dir: Path, split: str) -> list[xr.DataArray]:
+    """Lee `splits.json` + los eventos Zarr de un split ("train", "val",
+    "test"), por la misma convención de rutas que `features/dataset/` ya
+    establece -- recortando el padding previo sin fuego de cada evento
+    (ver `_trim_to_first_fire_day`)."""
     splits = json.loads((dataset_dir / "splits.json").read_text())
     events = []
-    for event_id in splits["test"]:
+    for event_id in splits[split]:
         zarr_path = dataset_dir / f"event_{event_id:04d}.zarr"
         opened = xr.open_zarr(zarr_path)["fire_event_tensor"]
         events.append(_trim_to_first_fire_day(opened))
     return events
+
+
+def load_test_events(dataset_dir: Path) -> list[xr.DataArray]:
+    return load_split_events(dataset_dir, "test")
 
 
 def _result_to_json(
@@ -162,7 +167,17 @@ def _result_to_json(
 def backtest(
     model: str = typer.Option(
         "cellular_automata",
-        help="Modelo a evaluar: 'cellular_automata' o 'unet' (requiere --checkpoint)",
+        help=(
+            "Modelo a evaluar: 'cellular_automata', 'unet' o los ensambles "
+            "'blend' / 'stacking' (los tres últimos requieren --checkpoint)"
+        ),
+    ),
+    blend_weight: float | None = typer.Option(
+        None,
+        help=(
+            "Peso del U-Net en --model blend. Por defecto se elige por Brier "
+            "sobre los eventos de VAL (nunca de test)."
+        ),
     ),
     checkpoint: Path | None = typer.Option(
         None, help="Checkpoint de U-Net a evaluar (solo --model unet)"
@@ -221,8 +236,54 @@ def backtest(
         }
         output_name = "unet.json"
         command_args = [f"--model unet --checkpoint {checkpoint}", *command_args]
+    elif model in ("blend", "stacking"):
+        if checkpoint is None:
+            typer.echo(f"--model {model} requiere --checkpoint.")
+            raise typer.Exit(code=1)
+        calibration_path = calibration if calibration is not None else default_calibration_path(
+            checkpoint
+        )
+        if not calibration_path.exists():
+            calibration_path = None
+        ca_model = CellularAutomatonModel(seed=seed)
+        unet_model = CalibratedUNet(checkpoint, calibration_path)
+        # el peso / los coeficientes se ajustan SOLO con val: usar test
+        # para elegirlos haría trampa en la comparación.
+        # val tiene NaN residuales de borde de cobertura (event
+        # 12676775: 99 celdas de fuel_type) que el test no tiene -- se
+        # reemplazan por 0, igual que ChileFinetuneDataset al entrenar
+        # (ver docs/limitations.md). Solo afecta el ajuste del ensamble.
+        val_events = [
+            e.copy(data=np.nan_to_num(e.values, nan=0.0))
+            for e in load_split_events(dataset_dir, "val")
+        ]
+        config = {
+            "checkpoint": str(checkpoint),
+            "calibration": str(calibration_path) if calibration_path else None,
+            "ca_params": dataclasses.asdict(ca_model.params),
+            "fit_split": "val",
+        }
+        command_args = [f"--model {model} --checkpoint {checkpoint}", *command_args]
+        if model == "blend":
+            if blend_weight is None:
+                blend_weight = select_blend_weight(ca_model, unet_model, val_events)
+            else:
+                command_args.insert(1, f"--blend-weight {blend_weight}")
+            spread_model = BlendEnsemble(ca_model, unet_model, weight_unet=blend_weight)
+            config["weight_unet"] = blend_weight
+            config["weight_selected_on_val"] = "--blend-weight" not in " ".join(command_args)
+            output_name = "blend.json"
+        else:
+            stacking = StackingEnsemble(ca_model, unet_model).fit(val_events)
+            spread_model = stacking
+            config["coefficients_ca_unet"] = list(stacking.coefficients)
+            config["intercept"] = stacking.intercept
+            output_name = "stacking.json"
     else:
-        typer.echo(f"Modelo desconocido: {model!r} -- usar 'cellular_automata' o 'unet'.")
+        typer.echo(
+            f"Modelo desconocido: {model!r} -- usar 'cellular_automata', 'unet', "
+            f"'blend' o 'stacking'."
+        )
         raise typer.Exit(code=1)
 
     result = run_backtest(
