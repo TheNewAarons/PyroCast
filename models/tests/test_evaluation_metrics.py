@@ -104,3 +104,20 @@ def test_ece_score_handles_more_bins_than_distinct_values_without_crashing():
 
 def test_ece_score_empty_input_is_zero_not_a_crash():
     assert ece_score(np.array([]), np.array([])) == 0.0
+
+
+def test_reliability_bins_reproduces_ece_and_leaves_empty_bins_as_none():
+    from models.evaluation.metrics import ece_score, reliability_bins
+
+    rng = np.random.default_rng(0)
+    pred = rng.random(500)
+    true = (rng.random(500) < pred * 0.5).astype(float)
+    bins = reliability_bins(pred, true, n_bins=10)
+    assert sum(b["count"] for b in bins) == 500
+    ece = sum(
+        b["count"] / 500 * abs(b["mean_pred"] - b["mean_true"]) for b in bins if b["count"]
+    )
+    assert abs(ece - ece_score(pred, true, n_bins=10)) < 1e-12
+
+    sparse = reliability_bins(np.array([0.05, 0.95]), np.array([0.0, 1.0]), n_bins=10)
+    assert sparse[4]["count"] == 0 and sparse[4]["mean_pred"] is None

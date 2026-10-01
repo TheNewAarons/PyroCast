@@ -71,3 +71,26 @@ def ece_score(predicted_prob: np.ndarray, true_binary: np.ndarray, n_bins: int =
         accuracy = float(true[in_bin].mean())
         ece += (count / n) * abs(confidence - accuracy)
     return float(ece)
+
+
+def reliability_bins(
+    predicted_prob: np.ndarray, true_binary: np.ndarray, n_bins: int = 10
+) -> list[dict[str, float | int | None]]:
+    """Datos de un diagrama de confiabilidad: por cada bin de ancho igual
+    sobre [0,1] (misma asignación de bins que `ece_score`), el conteo, la
+    probabilidad predicha media y la frecuencia observada media. Bins
+    vacíos: `mean_pred`/`mean_true` en None (no se inventa un punto)."""
+    predicted = predicted_prob.astype("float64").ravel()
+    true = true_binary.astype("float64").ravel()
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    indices = np.clip(np.digitize(predicted, edges[1:-1], right=True), 0, n_bins - 1)
+    bins: list[dict[str, float | int | None]] = []
+    for i in range(n_bins):
+        in_bin = indices == i
+        count = int(in_bin.sum())
+        bins.append({
+            "lo": float(edges[i]), "hi": float(edges[i + 1]), "count": count,
+            "mean_pred": float(predicted[in_bin].mean()) if count else None,
+            "mean_true": float(true[in_bin].mean()) if count else None,
+        })
+    return bins

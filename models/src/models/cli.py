@@ -307,5 +307,35 @@ def backtest(
     typer.echo(f"Métricas persistidas en PostGIS ({len(result.per_event)} model_run).")
 
 
+def report_artifacts(
+    checkpoint: Path = typer.Option(..., help="Checkpoint de U-Net (con su .calibrator.pt)"),
+    calibration: Path | None = typer.Option(None, help="Calibrador (def.: el del checkpoint)"),
+    results_dir: Path = typer.Option(Path("bench") / "results", help="Salida/entrada de bench"),
+    seed: int = typer.Option(42, help="Semilla (la misma que el backtest)"),
+) -> None:
+    """Calcula los insumos pesados del reporte (confiabilidad, predicciones por
+    evento, descriptores) y los guarda en bench/results/. Requiere checkpoint y
+    data/processed/dataset (no versionados)."""
+    from models.evaluation.report_artifacts import build_artifacts
+
+    dataset_dir = get_settings().data_processed_dir / "dataset"
+    out = build_artifacts(dataset_dir, checkpoint, results_dir, seed=seed, calibration=calibration)
+    typer.echo(f"Artefactos del reporte -> {out}")
+
+
+def report(
+    results_dir: Path = typer.Option(Path("bench") / "results", help="Resultados de bench"),
+    docs_dir: Path = typer.Option(Path("docs"), help="Directorio docs/ (entrada y salida)"),
+) -> None:
+    """Genera docs/results.md, docs/results.html y docs/figures/ solo a partir de
+    bench/results/ y docs/ (sin credenciales, checkpoint ni datos locales)."""
+    from models.evaluation.report import build_report
+
+    md_path, html_path = build_report(results_dir, docs_dir)
+    typer.echo(f"Reporte -> {md_path} y {html_path}")
+
+
 app.command("run-ca")(run_ca)
+app.command("report-artifacts")(report_artifacts)
+app.command("report")(report)
 app.command("backtest")(backtest)

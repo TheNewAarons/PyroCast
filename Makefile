@@ -1,5 +1,5 @@
 .PHONY: up down ingest-firms ingest-terrain ingest-weather ingest-vegetation \
-        build-dataset run-ca train calibrate backtest report serve \
+        build-dataset run-ca train calibrate backtest report report-artifacts serve \
         test lint typecheck
 
 up:
@@ -53,8 +53,13 @@ calibrate:
 backtest:
 	uv run --package models pyrocast-models backtest
 
+# solo lee bench/results/ y docs/ -- no necesita credenciales ni datos locales
 report:
-	@echo "pendiente: generación de docs/results.md aún no implementada"
+	uv run --package models pyrocast-models report
+
+# necesita runs/finetune_2026_v2/best.pt (+ .calibrator.pt) y data/processed/dataset
+report-artifacts:
+	uv run --package models pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v2/best.pt
 
 serve:
 	uv run --package serving uvicorn serving.api.main:app --reload --host 0.0.0.0 --port 8000
