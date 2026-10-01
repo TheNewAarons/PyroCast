@@ -103,7 +103,7 @@ LIMITATIONS = """# Limitaciones conocidas
   30 m / 3 h. Texto UNICO-RESOLUCION.
 - **Resolución de ERA5-Land vs. grilla de trabajo**: downscaling bilineal UNICO-ERA5.
 - **Reconstrucción de eventos de incendio: buffer**: UNICO-RECONSTRUCCION.
-- **Ningún tiempo de entrenamiento real sobre NDWS**: UNICO-NDWS.
+- **El lector nunca se probó contra un archivo real de Kaggle**: UNICO-NDWS.
 
 ## Herramienta de investigación
 
@@ -201,10 +201,11 @@ def test_failure_analysis_flags_low_iou_cases_with_evidence_based_hypotheses(wor
     text = build_report(results, docs, tmp_path / "out")[0].read_text()
     section = text.split("## 5. Dónde falla el modelo")[1].split("## 6.")[0]
     assert f"IoU < {FAIL_IOU:.2f}" in section
-    assert "U-Net (calibrado) — evento 22 (test): IoU 0.050" in section
+    assert "U-Net (calibrado): IoU 0.050" in section
+    assert "### Evento 22 (test)" in section
     assert "**subpredice**" in section  # 0 celdas predichas frente a 460
     assert "fuera del rango de entrenamiento" in section  # elevation_std_m 999
-    assert "terreno complejo" in section
+    assert "terreno más complejo" in section
     assert "evento 11" not in section  # IoU 0.7: no es una falla
     assert "no verificadas" in section
 

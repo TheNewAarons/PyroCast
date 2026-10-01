@@ -53,7 +53,7 @@ LIMITATION_TOPICS: tuple[tuple[str, str, str], ...] = (
     ("Downscaling de ERA5-Land (~9 km → 250 m)", r"Resolución de ERA5-Land", ""),
     ("Reconstrucción simplificada del estado del fuego", r"Reconstrucción de eventos", ""),
     ("Dependencia de un dataset público externo para preentrenar",
-     r"NDWS|preentren|Kaggle", r"NDWS"),
+     r"Kaggle", r"Kaggle"),
     ("Ausencia de validación operativa con CONAF/SENAPRED",
      r"CONAF|SENAPRED|operativ", r"SENAPRED"),
 )
@@ -494,16 +494,53 @@ DESCRIPTORS: tuple[tuple[str, str, str], ...] = (
     ("nonflammable_fraction", "fracción de celdas no combustibles", "fuel"),
 )
 _HYPOTHESIS = {
-    "size": "evento fuera de la distribución de entrenamiento por tamaño: el modelo vio pocos "
-            "incendios de esta magnitud",
+    "size": "evento más chico que la mayoría de los de entrenamiento (fuera de la "
+            "distribución por tamaño): el modelo vio pocos casos así",
     "wind": "viento cambiante no capturado por agregados diarios: la dirección varía y el "
             "modelo recibe un único vector medio por día",
-    "windspeed": "régimen de viento distinto al visto en entrenamiento",
-    "terrain": "terreno complejo: la propagación depende de la pendiente/elevación y el "
-               "modelo (250 m) la resuelve de forma gruesa",
+    "windspeed": "viento más intenso que en la mayoría de los eventos de entrenamiento: "
+                 "régimen poco representado",
+    "terrain": "terreno más complejo que en la mayoría de los eventos de entrenamiento: la "
+               "propagación depende de la pendiente/elevación y a 250 m se resuelve de "
+               "forma gruesa",
     "fuel": "combustible: gran parte de la zona es no combustible según WorldCover y la "
             "clasificación de combustible es un proxy grueso",
 }
+
+
+def _fmt(key: str, value: float) -> str:
+    return f"{value:.0f}" if key == "true_cells_final" else f"{value:.2f}"
+
+
+def _descriptor_analysis(
+    ev: dict[str, Any], train: list[dict[str, Any]]
+) -> tuple[list[str], list[str]]:
+    lines: list[str] = []
+    hypotheses: list[str] = []
+    for key, label, theme in DESCRIPTORS:
+        values = [t[key] for t in train if t.get(key) is not None]
+        value = ev.get(key)
+        if value is None or not values:
+            continue
+        rank = _percentile_rank(value, values)
+        outside = value < min(values) or value > max(values)
+        flag = ""
+        if outside:
+            flag = " **fuera del rango de entrenamiento**"
+        elif rank >= RANK_HIGH:
+            flag = " (alto frente al entrenamiento)"
+        elif rank <= RANK_LOW:
+            flag = " (bajo frente al entrenamiento)"
+        lines.append(
+            f"{label}: {_fmt(key, value)}; entrenamiento "
+            f"{_fmt(key, min(values))}–{_fmt(key, max(values))}; "
+            f"percentil {rank * 100:.0f}{flag}"
+        )
+        high_theme = theme in ("wind", "terrain", "fuel", "windspeed")
+        small_event = theme == "size" and rank <= RANK_LOW
+        if outside or (rank >= RANK_HIGH and high_theme) or small_event:
+            hypotheses.append(f"{_HYPOTHESIS[theme]} ({label}: {_fmt(key, value)}).")
+    return lines, hypotheses
 
 
 def _failures(doc: Doc, inp: Inputs) -> None:
@@ -515,62 +552,44 @@ def _failures(doc: Doc, inp: Inputs) -> None:
     n_train = sum(1 for e in art["events"] if e["split"] == "train")
     doc.p(
         f"Se analizan todos los pares modelo-evento retenidos con **IoU < {FAIL_IOU:.2f}** "
-        f"(umbral fijo de este reporte, no ajustado a los resultados). Para cada uno se "
-        f"comparan descriptores del evento contra los {n_train} "
-        f"eventos de entrenamiento. **Las hipótesis NO están verificadas**: con tan pocos "
-        f"eventos no se puede aislar una causa."
+        f"(umbral fijo de este reporte, no ajustado a los resultados), agrupados por evento. "
+        f"Se comparan descriptores del evento contra los {n_train} eventos de entrenamiento. "
+        f"**Las hipótesis NO están verificadas**: con tan pocos eventos no se puede aislar "
+        f"una causa."
     )
     events = {e["event_id"]: e for e in art["events"]}
     train = [e for e in art["events"] if e["split"] == "train"]
-    failing = sorted(
-        (r for r in art["model_events"] if r["iou"] < FAIL_IOU),
-        key=lambda r: (0 if r["split"] == "test" else 1, r["event_id"], r["model"]),
-    )
+    failing = [r for r in art["model_events"] if r["iou"] < FAIL_IOU]
     if not failing:
         doc.p(f"**Ningún caso retenido tiene IoU < {FAIL_IOU:.2f}.**")
         return
-    for r in failing:
-        ev = events.get(r["event_id"])
-        ratio = r["pred_cells_final"] / r["true_cells_final"] if r["true_cells_final"] else None
-        direction = ""
-        if ratio is not None:
-            direction = (
-                " — **subpredice**" if ratio < 0.5 else " — **sobrepredice**" if ratio > 2 else ""
+    cases = sorted({(r["split"], r["event_id"]) for r in failing},
+                   key=lambda c: (0 if c[0] == "test" else 1, c[1]))
+    for split, event_id in cases:
+        doc.h(3, f"Evento {event_id} ({split})"
+              + ("" if split == "test" else " — val: no es evidencia fuera de muestra"))
+        rows = sorted((r for r in failing if (r["split"], r["event_id"]) == (split, event_id)),
+                      key=lambda r: _ordered_index(r["model"]))
+        bullets = []
+        for r in rows:
+            ratio = r["pred_cells_final"] / r["true_cells_final"] if r["true_cells_final"] else None
+            direction = ""
+            if ratio is not None:
+                direction = (" — **subpredice**" if ratio < 0.5
+                             else " — **sobrepredice**" if ratio > 2 else "")
+            bullets.append(
+                f"{_label(r['model'])}: IoU {r['iou']:.3f}, Dice {r['dice']:.3f}, "
+                f"Brier {r['brier']:.3f}; celdas con prob ≥ 0,5 en el último día: "
+                f"{r['pred_cells_final']} frente a {r['true_cells_final']} realmente quemadas"
+                + (f" (razón {ratio:.2f})" if ratio is not None else "") + direction + "."
             )
-        doc.h(3, f"{_label(r['model'])} — evento {r['event_id']} ({r['split']}): "
-                 f"IoU {r['iou']:.3f}")
-        doc.p(
-            f"Dice {r['dice']:.3f}, Brier {r['brier']:.3f}. Celdas con prob ≥ 0,5 en el último "
-            f"día: {r['pred_cells_final']} frente a {r['true_cells_final']} realmente quemadas"
-            + (f" (razón {ratio:.2f})" if ratio is not None else "") + direction + "."
-        )
+        doc.ul(bullets)
+        ev = events.get(event_id)
         if ev is None or not train:
             doc.p("Sin descriptores de evento / de entrenamiento para comparar.")
             continue
-        lines: list[str] = []
-        hypotheses: list[str] = []
-        for key, label, theme in DESCRIPTORS:
-            values = [t[key] for t in train if t.get(key) is not None]
-            value = ev.get(key)
-            if value is None or not values:
-                continue
-            rank = _percentile_rank(value, values)
-            outside = value < min(values) or value > max(values)
-            flag = ""
-            if outside:
-                flag = " **fuera del rango de entrenamiento**"
-            elif rank >= RANK_HIGH:
-                flag = " (alto frente al entrenamiento)"
-            elif rank <= RANK_LOW:
-                flag = " (bajo frente al entrenamiento)"
-            lines.append(
-                f"{label}: {value:.2f}; entrenamiento {min(values):.2f}–{max(values):.2f}; "
-                f"percentil {rank * 100:.0f}{flag}"
-            )
-            high_theme = theme in ("wind", "terrain", "fuel", "windspeed")
-            small_event = theme == "size" and rank <= RANK_LOW
-            if outside or (rank >= RANK_HIGH and high_theme) or small_event:
-                hypotheses.append(f"{_HYPOTHESIS[theme]} ({label}: {value:.2f}).")
+        lines, hypotheses = _descriptor_analysis(ev, train)
+        doc.p("Descriptores del evento frente a los eventos de entrenamiento:")
         doc.ul(lines)
         if hypotheses:
             doc.p("**Hipótesis respaldadas por los descriptores** (no verificadas):")
@@ -578,10 +597,15 @@ def _failures(doc: Doc, inp: Inputs) -> None:
         else:
             doc.p("**Ningún descriptor se aparta del entrenamiento**: estos datos no respaldan "
                   "una hipótesis específica; la causa queda sin identificar.")
-        if r["model"] == "unet" and ratio is not None and ratio < 0.5:
+        if any(r["model"] == "unet" and r["pred_cells_final"] < 0.5 * r["true_cells_final"]
+               for r in rows):
             doc.p("Para el U-Net, la subpredicción sistemática es coherente con un modelo "
                   "entrenado desde cero con muy pocos eventos (sin preentrenamiento), que no "
                   "aprendió a propagar el fuego: hipótesis, sin experimento que la aísle.")
+
+
+def _ordered_index(model: str) -> int:
+    return MODEL_ORDER.index(model) if model in MODEL_ORDER else len(MODEL_ORDER)
 
 
 # ------------------------------------------------------------- limitaciones

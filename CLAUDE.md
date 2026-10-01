@@ -82,7 +82,8 @@ make run-ca                 # simula el autómata celular baseline
 make train                   # entrena/fine-tunea el U-Net
 make calibrate                 # calibración isotónica
 make backtest                    # evalúa contra incendios reales de Chile 2026
-make report                        # genera docs/results.md y .html
+make report                        # genera docs/results.md y .html (solo lee bench/results/ y docs/)
+make report-artifacts               # calcula curvas/mapas/descriptores desde checkpoint + datos (los deja en bench/results/)
 make serve                          # levanta la API + mapa web
 make test / lint / typecheck
 ```
