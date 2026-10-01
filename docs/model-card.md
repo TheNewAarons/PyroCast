@@ -1,5 +1,7 @@
 # Ficha del modelo: SmallUNet
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 `models/deep/unet.py` + `models/deep/train.py` implementan el segundo
 modelo del proyecto (P9-P11) -- una U-Net 2D pequeña, complementaria al
 autómata celular de P7 (`docs/cellular-automata.md`), entrenada primero

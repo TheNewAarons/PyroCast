@@ -25,15 +25,37 @@ def test_compute_ndvi_handles_zero_denominator_without_raising():
     assert ndvi[0, 0] == -9999.0  # nodata explícito, no NaN/inf propagando
 
 
-def test_compute_ndvi_masked_applies_boa_offset_correction():
-    # DN crudos post-baseline-04.00 (BOA_ADD_OFFSET=-1000): RED=1500,
-    # NIR=4500 -> corregido RED=500, NIR=3500 -> NDVI=(3500-500)/4000=0.75.
-    # Usar el DN crudo sin corregir daría 0.5 -- un error de 0.25 en un
-    # índice acotado a [-1, 1].
-    red_dn = np.array([[1500.0]])
-    nir_dn = np.array([[4500.0]])
+def test_compute_ndvi_masked_default_does_not_subtract_a_second_offset():
+    # Los composites reales de CDSE/openEO ya vienen con el offset BOA aplicado
+    # (DN de RED ~600, NIR ~2500 en vegetación): el NDVI sale directo del cociente.
+    # Restar otro -1000 (el bug C2 de docs/review.md) daba NDVI > 1.
+    red_dn = np.array([[600.0]])
+    nir_dn = np.array([[2600.0]])
     ndvi = compute_ndvi_masked(red_dn, nir_dn, src_nodata=None)
+    assert ndvi[0, 0] == pytest.approx((2600 - 600) / (2600 + 600))
+    assert 0.0 < ndvi[0, 0] <= 1.0
+
+
+def test_compute_ndvi_masked_boa_offset_is_still_an_explicit_parameter():
+    # fuente con el offset SIN aplicar: RED=1500, NIR=4500 -> 500/3500 -> 0.75
+    ndvi = compute_ndvi_masked(np.array([[1500.0]]), np.array([[4500.0]]), None, boa_offset=-1000.0)
     assert ndvi[0, 0] == pytest.approx(0.75)
+
+
+def test_compute_ndvi_masked_masks_dark_pixels_instead_of_producing_unstable_ratios():
+    # agua/sombra con el offset ya aplicado: DN ~0 o negativos por ruido
+    red = np.array([[-30.0, 5.0, 600.0]])
+    nir = np.array([[31.0, 15.0, 2600.0]])
+    ndvi = compute_ndvi_masked(red, nir, None)
+    assert ndvi[0, 0] == -9999.0 and ndvi[0, 1] == -9999.0
+    assert ndvi[0, 2] == pytest.approx(0.625)
+
+
+def test_compute_ndvi_masked_rejects_values_outside_the_valid_range():
+    # lo que producía el offset duplicado: denominador casi nulo -> NDVI enorme
+    with pytest.raises(ValueError, match="fuera de \\[-1, 1\\]"):
+        compute_ndvi_masked(
+            np.array([[500.0]]), np.array([[1100.0]]), None, boa_offset=-1000.0, mask_dark=False)
 
 
 def test_compute_ndvi_masked_respects_declared_integer_nodata_sentinel():
@@ -45,7 +67,7 @@ def test_compute_ndvi_masked_respects_declared_integer_nodata_sentinel():
     red_dn = np.array([[1500.0, -32768.0]])
     nir_dn = np.array([[4500.0, -32768.0]])
     ndvi = compute_ndvi_masked(red_dn, nir_dn, src_nodata=-32768.0)
-    assert ndvi[0, 0] == pytest.approx(0.75)
+    assert ndvi[0, 0] == pytest.approx(0.5)
     assert ndvi[0, 1] == -9999.0
 
 
@@ -53,7 +75,7 @@ def test_compute_ndvi_masked_respects_nan_input():
     red_dn = np.array([[1500.0, np.nan]])
     nir_dn = np.array([[4500.0, 4500.0]])
     ndvi = compute_ndvi_masked(red_dn, nir_dn, src_nodata=None)
-    assert ndvi[0, 0] == pytest.approx(0.75)
+    assert ndvi[0, 0] == pytest.approx(0.5)
     assert ndvi[0, 1] == -9999.0
 
 
@@ -85,11 +107,11 @@ def test_compute_and_save_vegetation_writes_reprojected_ndvi_with_explicit_nodat
     # salida (el borde reproyectado puede caer fuera del paralelogramo de
     # datos fuente y quedar en nodata -- eso es correcto, no un NaN suelto).
     # El interior, con solapamiento de datos garantizado, debe reflejar la
-    # corrección de offset BOA (0.75, no 0.5 crudo).
+    # cociente directo (RED=1500, NIR=4500 -> 0.5, sin offset adicional).
     assert not np.any(np.isnan(arr))
     interior = arr[3:-3, 3:-3]
     assert np.all(interior != -9999.0)
-    assert np.allclose(interior, 0.75, atol=1e-4)
+    assert np.allclose(interior, 0.5, atol=1e-4)
 
 
 def test_compute_and_save_vegetation_propagates_source_nodata(tmp_path):
@@ -114,9 +136,9 @@ def test_compute_and_save_vegetation_propagates_source_nodata(tmp_path):
     with rasterio.open(ndvi_path) as ds:
         arr = ds.read(1)
     # la celda nodata de origen no debe fabricar un NDVI plausible en la
-    # salida -- todo lo que sobreviva a la reproyección es -9999 o 0.75,
+    # salida -- todo lo que sobreviva a la reproyección es -9999 o 0.5,
     # y ambos deben aparecer (la mitad nodata, la mitad con dato real).
     present = set(np.unique(np.round(arr, 4)))
-    assert present <= {-9999.0, 0.75}
+    assert present <= {-9999.0, 0.5}
     assert -9999.0 in present
-    assert 0.75 in present
+    assert 0.5 in present

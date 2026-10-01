@@ -1,5 +1,7 @@
 # Limitaciones conocidas
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 Este documento se actualiza con cada hallazgo real de la evaluación
 contra incendios de Chile. Nunca se suaviza ni se elimina una métrica
 negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
@@ -260,15 +262,7 @@ resueltas están en "Resueltas (historial)", no se borran.
 
 ### Evaluación y backtest
 
-- **Backtest: la evaluación del día 0 es tautológica por construcción**:
-  `CellularAutomatonModel.predict` siembra `initial_burning` desde el
-  propio `fire_mask` del día 0 del evento (no hay "día -1" del que
-  sembrar) -- así que la predicción del día 0 para las celdas ya en
-  llamas coincide con la verdad por definición, no porque el modelo haya
-  "acertado" nada. Incluir el día 0 en las métricas agregadas del
-  backtest sesga (levemente, hacia arriba) el desempeño reportado. Ver
-  `docs/decisions.md`.
-  Las métricas de `docs/results.md` conservan esa convención (incluyen el día 0); su efecto no se cuantificó por separado.
+
 - **Bootstrap del backtest remuestrea valores por evento, no eventos
   reales ni píxeles**: con pocos eventos de test (realista en las
   primeras corridas de este proyecto), el intervalo de confianza
@@ -317,6 +311,23 @@ resueltas están en "Resueltas (historial)", no se borran.
 - **Selección de eventos por umbral de detecciones (≥40)**: sesga la
   muestra hacia incendios grandes y bien detectados por VIIRS; no
   representa la cola larga de incendios pequeños (`docs/backtest-2026.md`).
+
+- **Una sola corrida con una semilla (42) por modelo**: no se evaluó la
+  variación entre semillas de entrenamiento. Con n=2 eventos de test es
+  probable que esa variación supere las diferencias entre modelos que
+  muestra `docs/results.md`.
+- **Entrenamiento de un paso, evaluación en rollout (sesgo de
+  exposición)**: el U-Net se entrena para predecir el día siguiente con el
+  estado REAL del día anterior y se evalúa encadenando sus propias
+  predicciones (probabilidades continuas como entrada, no máscaras
+  binarias). El calibrador isotónico también se ajusta con predicciones de
+  un paso y se aplica en el rollout.
+- **El split por grupos (<= 10 km, <= 3 días) controla la fuga espacial y
+  temporal directa, no la correlación climática regional**: casi todos los
+  eventos pertenecen al mismo episodio meteorológico de enero de 2026. Con
+  la semilla 42 el evento dominante (`1277049523`) quedó en val, no en
+  train. Los umbrales de acoplamiento (10 km ≈ una celda de ERA5-Land,
+  3 días) son una elección de diseño sin calibrar.
 
 ### Dataset público NDWS y preentrenamiento
 
@@ -468,13 +479,21 @@ resueltas están en "Resueltas (historial)", no se borran.
   mayor y un dataset cuyo tamaño no es múltiplo exacto, el último batch
   (más chico) pesa lo mismo que los demás en el promedio.
 
+- **Normalización de entradas del U-Net (`input_norm="v1"`) con constantes
+  fijas y simplificaciones**: `aspect_deg` se divide por 360 (es circular y
+  tiene el centinela -1 de terreno plano, que queda ~0) y `fuel_type` se
+  codifica por su flamabilidad en [0, 1] (la tabla heurística del autómata
+  celular), no one-hot: dos clases distintas con la misma flamabilidad son
+  indistinguibles para el U-Net. Los checkpoints anteriores al campo
+  `input_norm` se cargan sin normalizar.
+
 ### Calibración y ensamble
 
 - **La tabla antes/después de `docs/calibration.md` es de un checkpoint
   de FIXTURE sintético** (`pyrocast-calibrate run --fixture`): prueba
   que el pipeline funciona de punta a punta, no que el U-Net real esté
   bien calibrado. La calibración del checkpoint real
-  (`runs/finetune_2026_v5`, `--chile-val`, solo 2 eventos de val) está
+  (`runs/finetune_2026_v6`, `--chile-val`, solo 2 eventos de val) está
   en `docs/results.md` sección 3.
 - **Sin split de calibración separado del de validación** -- ver
   `docs/decisions.md`. El ECE post-calibración de `make calibrate` da
@@ -566,6 +585,7 @@ resueltas están en "Resueltas (historial)", no se borran.
 
 ## Resueltas (historial)
 
+- ~~Backtest: la evaluación del día 0 es tautológica por construcción~~ -- resuelto (revisión independiente, H3): `run_backtest` excluye el día 0 por defecto (`exclude_anchor_day=True`); antes, un modelo que no predecía ninguna propagación obtenía un IoU > 0 por el ancla conocida. Los resultados anteriores quedan archivados en `bench/results/archive/`.
 - ~~`shared.model_protocol.FireSpreadModel` no está implementado para SmallUNet~~ -- resuelto: `CalibratedUNet` (`models/deep/calibration.py`) lo implementa (sigmoid, calibración, predicción autorregresiva).
 - ~~El CLI de calibración no soporta calibrar contra un set de validación real de eventos de Chile~~ -- resuelto: `pyrocast-calibrate run --checkpoint ... --chile-val`.
 - ~~`pyrocast-models backtest` solo corría el autómata celular y no registraba comando ni commit~~ -- resuelto: `--model unet|blend|stacking`, y todo resultado de `bench/results/` incluye `"command"` y `"git_commit"`.

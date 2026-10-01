@@ -1,5 +1,7 @@
 # Definición de "evento de incendio"
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 `features/fire_state/` reconstruye, a partir de detecciones activas de
 FIRMS (`shared.schemas.FireDetection`), qué detecciones pertenecen al
 mismo incendio y qué EXTENSIÓN ACTIVA de fuego tuvo ese incendio cada día

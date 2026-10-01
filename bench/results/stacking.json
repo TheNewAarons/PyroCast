@@ -1,27 +1,27 @@
 {
   "aggregate": {
     "brier": {
-      "lower": 0.08107870727452518,
-      "point_estimate": 0.08349270501520271,
-      "upper": 0.08590670275588025
+      "lower": 0.08368173491886675,
+      "point_estimate": 0.09515636443095651,
+      "upper": 0.10663099394304629
     },
     "dice": {
-      "lower": 0.6204922724670864,
-      "point_estimate": 0.6757751464724511,
-      "upper": 0.7310580204778157
+      "lower": 0.5003872966692486,
+      "point_estimate": 0.5572201249130357,
+      "upper": 0.6140529531568228
     },
     "ece": {
-      "lower": 0.06519025272031526,
-      "point_estimate": 0.09455586097840596,
-      "upper": 0.12392146923649668
+      "lower": 0.10387835480361726,
+      "point_estimate": 0.12625053790076274,
+      "upper": 0.14862272099790821
     },
     "iou": {
-      "lower": 0.44979253112033196,
-      "point_estimate": 0.5129543613105694,
-      "upper": 0.5761161915008068
+      "lower": 0.33367768595041325,
+      "point_estimate": 0.3883671309987188,
+      "upper": 0.44305657604702425
     }
   },
-  "command": "pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v4/best.pt --n-bootstrap 1000 --seed 42",
+  "command": "pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42",
   "confidence": 0.95,
   "config": {
     "ca_params": {
@@ -41,34 +41,34 @@
       "slope_coefficient": 4.0,
       "wind_coefficient": 0.2
     },
-    "calibration": "runs/finetune_2026_v4/best.calibrator.pt",
-    "checkpoint": "runs/finetune_2026_v4/best.pt",
+    "calibration": "runs/finetune_2026_v5/best.calibrator.pt",
+    "checkpoint": "runs/finetune_2026_v5/best.pt",
     "coefficients_ca_unet": [
-      0.0020214674502001895,
-      1.0458746366784553
+      -0.017905327666560906,
+      0.30329853257297446
     ],
     "fit_split": "val",
-    "intercept": 2.2974424718833872
+    "intercept": -0.7868070502459906
   },
   "ece_bins": 10,
-  "git_commit": "397ea1e06f3292006ed2ec488030e45a481b96c9",
+  "git_commit": "96efa2c3f414c38a4cf61de9265dfa1666424942",
   "model_name": "stacking",
   "n_bootstrap": 1000,
   "n_events": 2,
   "per_event": [
     {
-      "brier": 0.08590670275588025,
-      "dice": 0.6204922724670864,
-      "ece": 0.12392146923649668,
+      "brier": 0.10663099394304629,
+      "dice": 0.5003872966692486,
+      "ece": 0.14862272099790821,
       "event_id": 1013976330,
-      "iou": 0.44979253112033196
+      "iou": 0.33367768595041325
     },
     {
-      "brier": 0.08107870727452518,
-      "dice": 0.7310580204778157,
-      "ece": 0.06519025272031526,
+      "brier": 0.08368173491886675,
+      "dice": 0.6140529531568228,
+      "ece": 0.10387835480361726,
       "event_id": 2582836092,
-      "iou": 0.5761161915008068
+      "iou": 0.44305657604702425
     }
   ],
   "seed": 42,

@@ -1,5 +1,7 @@
 # Calibración isotónica
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 `models/deep/calibration.py` ajusta las probabilidades crudas de
 SmallUNet (P10) contra las frecuencias observadas en el set de
 validación, usando regresión isotónica (scikit-learn) -- el enfoque
@@ -22,7 +24,7 @@ bien calibrado está el U-Net real.
 ## Calibración del checkpoint real
 
 Las tablas de más abajo son del checkpoint de **fixture** sintético. La
-calibración del U-Net real (`runs/finetune_2026_v5`, `pyrocast-calibrate
+calibración del U-Net real (`runs/finetune_2026_v6`, `pyrocast-calibrate
 run --checkpoint ... --chile-val`, sobre los 2 eventos de val) y su
 efecto fuera de muestra (sobre los eventos de test) están en
 `docs/results.md`, sección 3, generada desde `bench/results/`. Allí el

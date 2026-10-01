@@ -1,5 +1,7 @@
 # Decisiones de diseño
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 ## Dependencias fuera de la lista explícita de CLAUDE.md
 
 - **`geoalchemy2`**: CLAUDE.md pide PostGIS vía SQLAlchemy Core "sin ORM
@@ -1065,3 +1067,14 @@ Decisiones del contenido: (1) el "test interno" del dataset de Chile ES el split
 **Seguridad**: credenciales con `repr=False` en `Settings`; `pretty_exceptions_show_locals=False` en todos los CLI (los locals de un traceback incluyen claves); prueba que escanea los archivos versionados en busca de claves; API con `debug=False`, `/docs` solo con `ENVIRONMENT=development` (por defecto `production`), CORS solo para orígenes listados explícitamente (nunca `*`, nunca credenciales), cabeceras `nosniff`/`X-Frame-Options`/`Referrer-Policy` (`strict-origin-when-cross-origin`: los tiles de OSM exigen Referer)/`Permissions-Policy`; `make serve` enlaza solo a 127.0.0.1. **No** se agregó CSP: no se pudo verificar contra un navegador real y una CSP mal calibrada rompería el mapa en silencio. `pip-audit` corre en CI como job aparte sobre `uv export` de `uv.lock` (vía `uvx`, sin agregarlo como dependencia del proyecto) y localmente con `make audit`; el 2026-10-01 no reportó vulnerabilidades conocidas.
 
 **Documentación**: `docs/limitations.md` reordenado por área (nada se borró; lo resuelto pasó a "Resueltas"); `docs/data-sources.md` ganó la tabla de licencias y atribución verificada contra las páginas oficiales (con qué se confirmó y qué no); el README incluye un bloque de resultados generado por `make report` (marcadores `results-summary`) para que no pueda desincronizarse de `bench/results/`; `make demo` + `serving/demo_data.py` dan una demo sin credenciales con datos sintéticos.
+
+## Revisión independiente: correcciones (docs/review.md)
+
+Cuatro cambios que alteraron los resultados publicados (todo se reentrenó y reevaluó; los resultados anteriores quedan archivados en `bench/results/archive/` y en `docs/backtest-2026.md` sección 10):
+
+- **C1, split por grupos espacio-temporales** (`features/dataset/split.py::split_events_grouped`, `pyrocast-features resplit`): separar por evento dejaba el mismo complejo de incendios repartido entre val y test. Umbrales 10 km (~una celda de ERA5-Land, el clima de entrada se comparte) y 3 días (un día más que `temporal_eps` del clustering). Exige >= 3 grupos independientes y falla ruidosamente si no. `find_split_leakage` audita cualquier split y el reporte muestra la auditoría.
+- **H4, objetivo de entrenamiento acumulado** (`ChileFinetuneDataset(cumulative=True)`): el backtest evalúa área quemada acumulada (igual que el autómata celular), pero el U-Net se entrenaba con el fuego activo del día siguiente. `CalibratedUNet` fuerza además que la probabilidad acumulada no decrezca en el tiempo.
+- **H1, normalización fija de entradas** (`models/deep/normalization.py`, `input_norm="v1"` guardado en el checkpoint; los checkpoints sin el campo se cargan sin normalizar). Constantes físicas, no estadísticos de los datos (nada que filtrar entre splits).
+- **H2/H3**: los eventos de entrenamiento se recortan a su primer día con fuego igual que en la evaluación (`models/events.py`), y las métricas del backtest excluyen el día 0 (`exclude_anchor_day=True`).
+
+Sin dependencias nuevas. La decisión de modelo por defecto en `serving/` (autómata celular) se mantiene, con razones actualizadas en `docs/backtest-2026.md` sección 8.

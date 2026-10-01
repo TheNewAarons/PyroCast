@@ -1,5 +1,7 @@
 # Fuentes de datos
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 ## Licencias y atribución (resumen)
 
 Todas las fuentes son abiertas y gratuitas. **Este repositorio no

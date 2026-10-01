@@ -1,5 +1,7 @@
 # Dataset card: tensores espaciotemporales por evento de incendio
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 ## Qué es
 
 Cada evento de incendio (`features/fire_state/clustering.py`) se

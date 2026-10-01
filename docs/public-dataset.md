@@ -1,5 +1,7 @@
 # Dataset público de preentrenamiento: Next Day Wildfire Spread
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 `models/deep/public_dataset.py` carga este dataset externo como fuente
 de preentrenamiento para el futuro U-Net (P9-P11) — el dataset propio
 de PyroCast (P6, Chile) es demasiado pequeño por sí solo para entrenar

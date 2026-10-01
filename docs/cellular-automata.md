@@ -1,5 +1,7 @@
 # Autómata celular de propagación de incendios: fórmula y parámetros
 
+> **Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.**
+
 `models/cellular_automata/` implementa un autómata celular probabilístico
 inspirado en Rothermel simplificado — NO una implementación de las
 ecuaciones de Rothermel (que requieren humedad de combustible, razón de

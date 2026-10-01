@@ -1,5 +1,5 @@
 """NDVI (Normalized Difference Vegetation Index) desde Sentinel-2 L2A, con
-corrección de offset BOA y remuestreo a la grilla de trabajo.
+con chequeo de rango y remuestreo a la grilla de trabajo.
 
 Fórmula: NDVI = (NIR - RED) / (NIR + RED)               (adimensional, [-1, 1])
 
@@ -20,16 +20,18 @@ no debe fabricar una. La única defensa en profundidad real que este
 módulo aporta es no inventar reflectancia donde el composite declara
 nodata (`compute_ndvi_masked`).
 
-Corrección radiométrica: Sentinel-2 L2A con processing baseline 04.00+
-(vigente para toda la temporada 2025-26 de este proyecto, desde
-2022-01-25) agrega un offset aditivo `BOA_ADD_OFFSET = -1000` a los DN
-de reflectancia de superficie. La colección `SENTINEL2_L2A` de CDSE no
-publica esta metadata en su descripción (verificado 2026-09-26), así
-que no hay forma de leerlo del propio dato — se asume el offset del
-baseline vigente y se aplica explícitamente antes de calcular el
-cociente (el NDVI es invariante a un factor multiplicativo, pero NO a
-un offset aditivo: un DN sin corregir de RED=1500/NIR=4500 da NDVI=0.5;
-corregido da 0.75 — un error de 0.25 si se ignora).
+Corrección radiométrica -- CORREGIDA en la revisión independiente (docs/review.md,
+hallazgo C2): una versión anterior restaba un offset BOA de -1000 a los DN,
+suponiendo que el composite traía el offset del processing baseline 04.00+. Los
+composites REALES que entrega openEO/CDSE ya vienen con el offset aplicado
+(verificado el 2026-10-01 contra los 15 composites descargados: DN mínimos de
+5-15 y valores negativos, imposibles con un offset +1000 presente; mediana de
+RED ~600 y de NIR ~2500). Restar -1000 de nuevo duplicaba la corrección y daba
+NDVI de hasta 5 (mediana ~1.9, con denominadores casi nulos o negativos) en TODOS
+los tensores de evento. El offset por defecto es ahora 0.0 (`boa_offset` sigue
+siendo un parámetro explícito por si algún día se usa una fuente con el offset
+sin aplicar), y `compute_and_save_vegetation` rechaza con un error cualquier NDVI
+fuera de [-1, 1] en vez de escribirlo en silencio.
 
 Remuestreo: **bilineal** — NDVI es una magnitud continua, igual que la
 elevación del DEM o los campos de ERA5-Land (a diferencia de WorldCover,
@@ -43,7 +45,13 @@ from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 _NDVI_NODATA = -9999.0
 # Sentinel-2 L2A processing baseline 04.00+ (>= 2022-01-25).
-SENTINEL2_BOA_ADD_OFFSET = -1000.0
+SENTINEL2_BOA_ADD_OFFSET = 0.0
+# 0.0: los composites de CDSE/openEO ya traen el offset aplicado (ver docstring).
+_NDVI_VALID_RANGE_TOLERANCE = 1e-3
+_MIN_REFLECTANCE_SUM_DN = 100.0
+# con el offset ya aplicado, píxeles oscuros (agua, sombra) tienen DN ~0 o negativos
+# por ruido: el cociente NDVI ahí es inestable (denominador ~0) y sin sentido físico.
+# Se marcan nodata si RED o NIR <= 0 o si RED+NIR < 100 DN (reflectancia suma < 0.01).
 
 
 def compute_ndvi(red: np.ndarray, nir: np.ndarray) -> np.ndarray:
@@ -54,7 +62,9 @@ def compute_ndvi(red: np.ndarray, nir: np.ndarray) -> np.ndarray:
 
 
 def compute_ndvi_masked(
-    red_dn: np.ndarray, nir_dn: np.ndarray, src_nodata: float | None
+    red_dn: np.ndarray, nir_dn: np.ndarray, src_nodata: float | None,
+    boa_offset: float = SENTINEL2_BOA_ADD_OFFSET, check_range: bool = True,
+    mask_dark: bool = True,
 ) -> np.ndarray:
     """NDVI desde DN crudos de reflectancia, aplicando la corrección de
     offset BOA y marcando como nodata explícito cualquier píxel inválido
@@ -66,14 +76,29 @@ def compute_ndvi_masked(
     if src_nodata is not None:
         valid &= (red_dn != src_nodata) & (nir_dn != src_nodata)
 
-    red = red_dn + SENTINEL2_BOA_ADD_OFFSET
-    nir = nir_dn + SENTINEL2_BOA_ADD_OFFSET
+    red = red_dn + boa_offset
+    nir = nir_dn + boa_offset
+    if mask_dark:
+        valid &= (red > 0) & (nir > 0) & ((red + nir) >= _MIN_REFLECTANCE_SUM_DN)
     ndvi = compute_ndvi(red, nir)
-    return np.where(valid, ndvi, _NDVI_NODATA).astype("float32")
+    out = np.where(valid, ndvi, _NDVI_NODATA).astype("float32")
+    real = out[out != _NDVI_NODATA]
+    if check_range and real.size and (
+        float(real.max()) > 1.0 + _NDVI_VALID_RANGE_TOLERANCE
+        or float(real.min()) < -1.0 - _NDVI_VALID_RANGE_TOLERANCE
+    ):
+        raise ValueError(
+            f"NDVI fuera de [-1, 1] (min={float(real.min()):.3f}, max={float(real.max()):.3f}): "
+            f"los DN no corresponden a reflectancia con boa_offset={boa_offset}. Un NDVI así "
+            f"es un error de unidades/offset, no un dato -- no se escribe."
+        )
+    return out
 
 
 def compute_and_save_vegetation(
-    composite_path: Path, output_dir: Path, target_crs: str, target_resolution_m: int
+    composite_path: Path, output_dir: Path, target_crs: str, target_resolution_m: int,
+    boa_offset: float = SENTINEL2_BOA_ADD_OFFSET, check_range: bool = True,
+    mask_dark: bool = True,
 ) -> Path:
     with rasterio.open(composite_path) as src:
         red_dn = src.read(1).astype("float32")
@@ -83,7 +108,10 @@ def compute_and_save_vegetation(
         src_transform = src.transform
         height, width = src.height, src.width
 
-    ndvi = compute_ndvi_masked(red_dn, nir_dn, src_nodata)
+    ndvi = compute_ndvi_masked(
+        red_dn, nir_dn, src_nodata, boa_offset=boa_offset, check_range=check_range,
+        mask_dark=mask_dark,
+    )
 
     west, south, east, north = rasterio.transform.array_bounds(height, width, src_transform)
     dst_transform, dst_width, dst_height = calculate_default_transform(

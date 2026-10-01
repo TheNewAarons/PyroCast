@@ -2,7 +2,7 @@
 
 *Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.*
 
-FastAPI. Levantar con `make serve` (puerto 8000, documentación interactiva en `/docs`). Requiere `.env` (la app falla al iniciar con `ConfigurationError` si faltan variables) y los datos procesados en `DATA_PROCESSED_DIR` (`make ingest-terrain`, `make ingest-weather`, `make ingest-vegetation`).
+FastAPI. Levantar con `make serve` (127.0.0.1:8000; `/docs` solo existe con `ENVIRONMENT=development`, que `make serve` y `make demo` fijan; en el modo `production` por defecto no hay `/docs`, `/redoc` ni `/openapi.json`). Requiere `.env` (la app falla al iniciar con `ConfigurationError` si faltan variables) y los datos procesados en `DATA_PROCESSED_DIR` (`make ingest-terrain`, `make ingest-weather`, `make ingest-vegetation`).
 
 Las respuestas de `/predict` y `/active-fires` son GeoJSON `FeatureCollection` válidos con campos extra ("foreign members", RFC 7946 §6.1), así que Leaflet puede usarlos con `L.geoJSON` directamente. Todas incluyen:
 
