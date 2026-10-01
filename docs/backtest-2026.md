@@ -1,10 +1,12 @@
-# Backtest 2025-2026: autómata celular vs. U-Net contra incendios reales
+# Backtest 2025-2026: autómata celular vs. U-Net vs. ensamble contra incendios reales
 
 *Herramienta de investigación. No usar para decisiones operativas de combate de incendios sin validación de CONAF/SENAPRED.*
 
 Este documento reporta el resultado de evaluar y comparar el autómata celular (P7) y el U-Net (P9-P11) contra un conjunto de incendios reales de la temporada 2025-2026 en Biobío, Ñuble y La Araucanía, construidos con el pipeline completo de ingesta y features (P1-P6) sobre datos reales de esas fechas -- no de fixture.
 
-**Resultado honesto por adelantado**: en 1 de los 2 eventos de test, el U-Net calibrado **no supera** al autómata celular en IoU/Dice (los pierde por un margen amplio). Ver la sección "Comparación" y su hipótesis. Con solo 2 eventos de test, esta comparación **no es estadísticamente robusta** -- ver "Limitaciones de esta evaluación".
+**Resultado honesto por adelantado (P13, ensamble)**: el blend CA+U-Net (peso del U-Net 0.4, elegido en val) **no supera al mejor modelo individual en todas las métricas** -- mejora IoU/Dice sobre el CA pero pierde Brier/ECE contra el U-Net. El stacking logístico sí gana en las 4 métricas, pero se ajustó sobre 2 eventos de val que el calibrador del U-Net ya vio, y se evalúa con n=2 -- **no se considera evidencia suficiente** para promoverlo. **Ningún ensamble es el default de `serving/`**; ver sección 8.
+
+**Resultado honesto por adelantado (P12)**: en 1 de los 2 eventos de test, el U-Net calibrado **no supera** al autómata celular en IoU/Dice (los pierde por un margen amplio). Ver la sección "Comparación" y su hipótesis. Con solo 2 eventos de test, esta comparación **no es estadísticamente robusta** -- ver "Limitaciones de esta evaluación".
 
 ## 1. Credenciales y datos reales usados
 
@@ -67,29 +69,33 @@ Ninguno de estos 7 hallazgos se ocultó ni se "arregló para que el número se v
 
 ## 5. Backtest: métricas + intervalos de confianza (bootstrap, 1000 remuestreos, 95%)
 
-Ambos modelos se evaluaron contra los **mismos 2 eventos de test** (`203187374`, `2582836092`), con las mismas 4 métricas (`models/evaluation/metrics.py`): Brier, ECE, IoU, Dice.
+Los modelos se evaluaron contra los **mismos 2 eventos de test** (`203187374`, `2582836092`), con las mismas 4 métricas (`models/evaluation/metrics.py`): Brier, ECE, IoU, Dice.
 
 ### Por evento
 
 | event_id | modelo | IoU | Dice | Brier | ECE |
 |---|---|---|---|---|---|
 | 203187374 | CA (sin calibrar) | 0.351 | 0.520 | 0.082 | 0.082 |
-| 203187374 | U-Net (calibrado) | **0.442** | **0.613** | **0.044** | **0.035** |
+| 203187374 | U-Net (calibrado) | **0.442** | 0.613 | **0.044** | **0.035** |
+| 203187374 | Blend CA+U-Net (w=0.4) | 0.384 | 0.555 | 0.058 | 0.058 |
+| 203187374 | Stacking logístico | 0.462 | 0.632 | 0.061 | 0.055 |
 | 2582836092 | CA (sin calibrar) | **0.288** | **0.447** | 0.103 | 0.100 |
-| 2582836092 | U-Net (calibrado) | 0.055 | 0.104 | **0.096** | **0.094** |
+| 2582836092 | U-Net (calibrado) | 0.055 | 0.104 | 0.096 | 0.094 |
+| 2582836092 | Blend CA+U-Net (w=0.4) | 0.284 | 0.442 | 0.092 | 0.090 |
+| 2582836092 | Stacking logístico | 0.564 | 0.722 | 0.056 | 0.020 |
 
-En negrita, el mejor valor por métrica y evento.
+(Negritas: mejor valor entre CA y U-Net, comparación original de P12; las filas de ensamble se agregaron sin recalcular negritas.)
 
 ### Agregado (bootstrap sobre los 2 eventos de test)
 
-| métrica | CA (sin calibrar) | U-Net (calibrado) |
-|---|---|---|
-| IoU | 0.319 [0.288, 0.351] | 0.249 [0.055, 0.442] |
-| Dice | 0.483 [0.447, 0.520] | 0.359 [0.104, 0.613] |
-| Brier | 0.092 [0.082, 0.103] | 0.070 [0.044, 0.096] |
-| ECE | 0.091 [0.082, 0.100] | 0.064 [0.035, 0.094] |
+| métrica | CA (sin calibrar) | U-Net (calibrado) | Ensamble: blend (w=0.4) | Ensamble: stacking |
+|---|---|---|---|---|
+| IoU ↑ | 0.319 [0.288, 0.351] | 0.249 [0.055, 0.442] | 0.334 [0.284, 0.384] | 0.513 [0.462, 0.564] |
+| Dice ↑ | 0.483 [0.447, 0.520] | 0.359 [0.104, 0.613] | 0.499 [0.442, 0.555] | 0.677 [0.632, 0.722] |
+| Brier ↓ | 0.092 [0.082, 0.103] | 0.070 [0.044, 0.096] | 0.075 [0.058, 0.092] | 0.058 [0.056, 0.061] |
+| ECE ↓ | 0.091 [0.082, 0.100] | 0.064 [0.035, 0.094] | 0.074 [0.058, 0.090] | 0.038 [0.020, 0.055] |
 
-Resultados crudos, con el comando exacto y el commit de git que los produjo: `bench/results/baseline.json` (CA), `bench/results/unet.json` (U-Net).
+Resultados crudos, con el comando exacto y el commit de git que los produjo: `bench/results/baseline.json` (CA), `bench/results/unet.json` (U-Net), `bench/results/blend.json` y `bench/results/stacking.json` (ensambles, commit `d19511a`). Mismo código de backtest (`run_backtest`), mismos 2 eventos de test, misma semilla, mismos 1000 remuestreos.
 
 ## 6. Comparación honesta: dónde el U-Net NO supera al autómata celular
 
@@ -114,13 +120,33 @@ No se ajustó nada de lo anterior para que el número final se viera mejor -- es
 - **ERA5-Land interpolado geométricamente** de 9 km a 250 m (limitación de diseño ya documentada) + relleno de NaN costero con el promedio regional (hallazgo #5 de la sección 3) -- el clima "local" de un evento muy costero es, en la práctica, un promedio regional, no una medición específica de ese punto.
 - **Selección de eventos por umbral de detecciones (≥40)**, no aleatoria -- sesga la muestra hacia incendios más grandes/mejor detectados por VIIRS; no representa la cola larga de incendios pequeños de la temporada.
 
-## 8. Reproducibilidad
+## 8. Ensamble CA + U-Net (P13) y modelo por defecto en `serving/`
 
-Comandos exactos y commit de git usados, embebidos en cada resultado (`bench/results/baseline.json`, `bench/results/unet.json`, campos `"command"` y `"git_commit"`):
+Implementación: `models/deep/ensemble.py` (`BlendEnsemble`, `StackingEnsemble`, `select_blend_weight`), expuesta como `pyrocast-models backtest --model blend|stacking`. Ambos implementan `FireSpreadModel`, así que corren por el MISMO `run_backtest`.
+
+- **Blend**: `(1-w)·CA + w·U-Net`. `w` se elige por Brier medio sobre los 2 eventos de **val** (grilla 0.0-1.0 paso 0.1), nunca sobre test -> **w=0.4**.
+- **Stacking**: regresión logística sobre `[logit(p_CA), logit(p_UNet)]`, ajustada sobre val. Coeficientes: CA 0.08, U-Net 1.75, intercepto 4.49 (`bench/results/stacking.json`). Es decir, ignora casi por completo al CA y re-escala la salida del U-Net.
+- Los NaN residuales de val (99 celdas de `fuel_type` del evento `12676775`) se reemplazan por 0 al ajustar, igual que `ChileFinetuneDataset` al entrenar.
+
+**Lectura honesta** (criterio de aceptación: ¿mejora sobre el mejor individual?):
+
+1. **Blend: NO mejora sobre el mejor individual de forma consistente.** IoU/Dice suben respecto del CA (0.334 vs 0.319; 0.499 vs 0.483) y mucho respecto del U-Net, pero **en Brier (0.075 vs 0.070) y ECE (0.074 vs 0.064) el U-Net solo es mejor**. Es un compromiso entre los dos, no un dominio. Los intervalos de CA y blend se solapan por completo en IoU/Dice.
+2. **Stacking: gana en las 4 métricas, pero no se acepta como evidencia.** (a) Se ajusta sobre **2 eventos de val**, y el calibrador isotónico del U-Net ya se ajustó sobre esos mismos 2 eventos, así que las salidas del U-Net en val son optimistas (fuga documentada en `docs/calibration.md`). (b) Evaluación con **n=2 eventos de test**: el intervalo bootstrap estrecho del stacking (IoU [0.462, 0.564]) refleja que ambos eventos dieron valores parecidos, no precisión. (c) El intercepto grande (4.49) indica que gran parte de la ganancia puede ser re-escalado de probabilidades (y de la base de "ya ardió", acumulada) y no información nueva; con 2 eventos no se puede separar. (d) Es el único modelo cuyo resultado cambia tan radicalmente el evento `2582836092` (IoU 0.055 -> 0.564 vs. el U-Net), lo que pide replicación antes de creerlo. **No se hizo validación cruzada por evento** porque 2 eventos de val no la permiten.
+3. Con una muestra mayor de eventos (más temporadas) y un split val distinto del usado para calibrar el U-Net, el stacking podría confirmarse o desaparecer. No hay forma de saberlo con estos datos.
+
+**Decisión de modelo por defecto en `serving/`: autómata celular (`CellularAutomatonModel`, parámetros por defecto).** Ningún ensamble queda como opción por defecto.
+
+Por qué el CA y no el U-Net: (i) mejor IoU/Dice agregado (0.319 vs 0.249) y **sin el fallo catastrófico** del U-Net en el evento `2582836092` (IoU 0.288 vs 0.055); (ii) sin checkpoint ni calibrador que versionar y sin dependencia de torch en el camino de servido; (iii) comportamiento explicable por reglas. Costo asumido: peor Brier/ECE que el U-Net (probabilidades menos calibradas) -- cualquier consumidor de `serving/` debe tratar sus probabilidades como un puntaje relativo, no como una probabilidad calibrada. Hoy `serving/` solo expone `/healthz` (no hay endpoint de predicción), así que esta decisión es la que **deberá implementar** el futuro endpoint; no hay código de servido que cambiar todavía. Se revisa cuando exista una evaluación con más eventos. Registrado en `docs/decisions.md`.
+
+## 9. Reproducibilidad
+
+Comandos exactos y commit de git usados, embebidos en cada resultado (`bench/results/baseline.json`, `unet.json`, `blend.json`, `stacking.json`, campos `"command"` y `"git_commit"`):
 
 ```
 pyrocast-models backtest --n-bootstrap 1000 --seed 42
 pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42
+pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42
+pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42
 ```
 
 Para reproducir de punta a punta con las mismas credenciales: ingerir FIRMS/DEM/WorldCover/ERA5/Sentinel-2 para las fechas y bboxes de la sección 2, `pyrocast-features build-dataset --event-ids <ids>` por evento, `pyrocast-train finetune`, `pyrocast-calibrate run --chile-val`, y los dos comandos de arriba.

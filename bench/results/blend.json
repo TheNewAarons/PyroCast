@@ -1,0 +1,73 @@
+{
+  "aggregate": {
+    "brier": {
+      "lower": 0.05762377491094393,
+      "point_estimate": 0.07456249666354015,
+      "upper": 0.09150121841613636
+    },
+    "dice": {
+      "lower": 0.4421310471524801,
+      "point_estimate": 0.4987203908328772,
+      "upper": 0.5553097345132744
+    },
+    "ece": {
+      "lower": 0.058281924769063104,
+      "point_estimate": 0.07435112662393738,
+      "upper": 0.09042032847881165
+    },
+    "iou": {
+      "lower": 0.2838050314465409,
+      "point_estimate": 0.33409240852572064,
+      "upper": 0.38437978560490044
+    }
+  },
+  "command": "pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42",
+  "confidence": 0.95,
+  "config": {
+    "ca_params": {
+      "base_spread_prob": 0.3,
+      "fuel_flammability": {
+        "1": 1.0,
+        "2": 0.8,
+        "3": 0.6,
+        "4": 0.3,
+        "5": 0.1,
+        "90": 0.0,
+        "91": 0.0,
+        "92": 0.0,
+        "93": 0.0,
+        "99": 0.0
+      },
+      "slope_coefficient": 4.0,
+      "wind_coefficient": 0.2
+    },
+    "calibration": "runs/finetune_2026_v2/best.calibrator.pt",
+    "checkpoint": "runs/finetune_2026_v2/best.pt",
+    "fit_split": "val",
+    "weight_selected_on_val": true,
+    "weight_unet": 0.4
+  },
+  "ece_bins": 10,
+  "git_commit": "d19511a902bb9f450a5bd1637d44e1ee5fd42915",
+  "model_name": "blend",
+  "n_bootstrap": 1000,
+  "n_events": 2,
+  "per_event": [
+    {
+      "brier": 0.05762377491094393,
+      "dice": 0.5553097345132744,
+      "ece": 0.058281924769063104,
+      "event_id": 203187374,
+      "iou": 0.38437978560490044
+    },
+    {
+      "brier": 0.09150121841613636,
+      "dice": 0.4421310471524801,
+      "ece": 0.09042032847881165,
+      "event_id": 2582836092,
+      "iou": 0.2838050314465409
+    }
+  ],
+  "seed": 42,
+  "split": "test"
+}
