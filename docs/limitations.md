@@ -490,7 +490,7 @@ negativa para que el proyecto "se vea mejor" (ver CLAUDE.md).
 
 ## Ensamble CA + U-Net: pesos ajustados sobre un val contaminado
 
-El peso del blend y los coeficientes del stacking (`models/deep/ensemble.py`) se ajustan sobre los 2 eventos de val, los mismos que calibraron el calibrador isotónico del U-Net: las salidas del U-Net ahí son optimistas y sesgan el ensamble a favorecerlo. Con n=2 en val y n=2 en test no hay validación cruzada posible; la ventaja del stacking (`docs/backtest-2026.md` sección 9) no es concluyente.
+El peso del blend y los coeficientes del stacking (`models/deep/ensemble.py`) se ajustan sobre los 2 eventos de val, los mismos que calibraron el calibrador isotónico del U-Net: las salidas del U-Net ahí son optimistas y sesgan el ensamble a favorecerlo. Con n=2 en val y n=2 en test no hay validación cruzada posible; la ventaja del stacking (`docs/backtest-2026.md` sección 8) no es concluyente.
 
 ## Herramienta de investigación
 
