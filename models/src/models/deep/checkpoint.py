@@ -26,6 +26,10 @@ class TrainingConfig:
     patience: int
     data_paths: tuple[str, ...]
     pretrained_checkpoint: str | None = None
+    # normalización de entradas del modelo (models/deep/normalization.py); los
+    # checkpoints anteriores a este campo se cargan como "none" (default de clase:
+    # un pickle viejo no tiene el atributo en la instancia).
+    input_norm: str = "none"
 
 
 def save_checkpoint(
@@ -61,7 +65,8 @@ def load_checkpoint(
     config: TrainingConfig = checkpoint["config"]
 
     model = SmallUNet(
-        in_channels=config.in_channels, base_channels=config.base_channels, depth=config.depth
+        in_channels=config.in_channels, base_channels=config.base_channels, depth=config.depth,
+        input_norm=config.input_norm,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
 

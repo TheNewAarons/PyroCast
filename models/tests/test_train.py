@@ -276,3 +276,23 @@ def test_set_seed_makes_model_init_deterministic():
     model_b = SmallUNet(in_channels=3, base_channels=8, depth=1)
     for p_a, p_b in zip(model_a.parameters(), model_b.parameters(), strict=True):
         assert torch.equal(p_a, p_b)
+
+
+def test_load_chile_events_trims_leading_days_without_fire_like_the_evaluation(tmp_path):
+    import numpy as np
+    import xarray as xr
+    from features.dataset.assemble import CHANNEL_ORDER
+    from models.deep.train import _load_chile_events
+
+    data = np.zeros((6, len(CHANNEL_ORDER), 4, 4), dtype="float32")
+    data[3:, CHANNEL_ORDER.index("fire_mask"), 1, 1] = 1.0  # fuego desde el día 3
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={"day": [f"2026-01-{d + 1:02d}" for d in range(6)],
+                "channel": list(CHANNEL_ORDER)},
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 7},
+    )
+    event.to_dataset().to_zarr(tmp_path / "event_0007.zarr", mode="w")
+    (loaded,) = _load_chile_events(tmp_path, [7])
+    assert loaded.sizes["day"] == 3
+    assert str(loaded.coords["day"].values[0]) == "2026-01-04"

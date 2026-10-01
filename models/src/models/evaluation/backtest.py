@@ -105,7 +105,12 @@ def run_backtest(
     seed: int = 42,
     ece_bins: int = 10,
     confidence: float = 0.95,
+    exclude_anchor_day: bool = True,
 ) -> BacktestResult:
+    """`exclude_anchor_day` (por defecto True): el día 0 es el estado CONOCIDO
+    del que parte la predicción y coincide con la verdad por construcción;
+    incluirlo premia a un modelo que no predice ninguna propagación (hallazgo
+    H3 de docs/review.md). Las métricas se calculan sobre los días 1..n-1."""
     per_event: list[EventMetrics] = []
     for event in events:
         event_id = int(event.attrs["event_id"])
@@ -118,6 +123,13 @@ def run_backtest(
         # acumulada, no cruda -- ver docstring del módulo.
         true_mask = np.logical_or.accumulate(true_prob_raw >= _FIRE_MASK_THRESHOLD, axis=0)
         true_prob = true_mask.astype("float64")
+        if exclude_anchor_day:
+            if event.sizes["day"] < 2:
+                raise ValueError(
+                    f"El evento {event_id} tiene {event.sizes['day']} día(s): excluir el día 0 "
+                    f"necesita al menos 2 días (exclude_anchor_day=False para incluirlo)."
+                )
+            predicted_prob, true_mask, true_prob = predicted_prob[1:], true_mask[1:], true_prob[1:]
         predicted_mask = predicted_prob >= _FIRE_MASK_THRESHOLD
 
         per_event.append(

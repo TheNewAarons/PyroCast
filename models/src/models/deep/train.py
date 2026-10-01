@@ -32,6 +32,7 @@ from models.deep.public_dataset import (
     split_public_dataset,
 )
 from models.deep.unet import SmallUNet
+from models.events import trim_to_first_fire_day
 
 _FIRE_MASK_CHANNEL_INDEX = CHANNEL_ORDER.index("fire_mask")
 
@@ -223,10 +224,14 @@ def _callback() -> None:
 
 
 def _load_chile_events(dataset_dir: Path, event_ids: list[int]) -> list[xr.DataArray]:
+    # recortados a su primer día con fuego, IGUAL que en la evaluación
+    # (models/events.py): entrenar con los días de padding sin fuego (y con el
+    # par "sin fuego -> aparece fuego") enseñaría una distribución que la
+    # evaluación nunca ve -- hallazgo H2 de docs/review.md.
     events = []
     for event_id in event_ids:
         zarr_path = dataset_dir / f"event_{event_id:04d}.zarr"
-        events.append(xr.open_zarr(zarr_path)["fire_event_tensor"])
+        events.append(trim_to_first_fire_day(xr.open_zarr(zarr_path)["fire_event_tensor"]))
     return events
 
 
@@ -242,6 +247,9 @@ def pretrain(
     max_epochs: int = typer.Option(50, help="Épocas máximas"),
     patience: int = typer.Option(5, help="Épocas sin mejora antes de early stopping"),
     seed: int = typer.Option(42, help="Semilla de reproducibilidad"),
+    input_norm: str = typer.Option(
+        "v1", help="Normalización fija de entradas (models/deep/normalization.py): none | v1"
+    ),
     max_samples: int | None = typer.Option(
         None,
         help=(
@@ -280,8 +288,12 @@ def pretrain(
         depth=depth, lr=lr, batch_size=batch_size, seed=seed, focal_alpha=0.8,
         focal_gamma=2.0, max_epochs=max_epochs, patience=patience,
         data_paths=tuple(str(p) for p in shard_paths), pretrained_checkpoint=None,
+        input_norm=input_norm,
     )
-    model = SmallUNet(in_channels=config.in_channels, base_channels=base_channels, depth=depth)
+    model = SmallUNet(
+        in_channels=config.in_channels, base_channels=base_channels, depth=depth,
+        input_norm=input_norm,
+    )
     history = train_model(
         model, NDWSPretrainDataset(train_samples), NDWSPretrainDataset(val_samples),
         config, run_dir,
@@ -329,6 +341,13 @@ def finetune(
     max_epochs: int = typer.Option(30, help="Épocas máximas"),
     patience: int = typer.Option(5, help="Épocas sin mejora antes de early stopping"),
     seed: int = typer.Option(42, help="Semilla de reproducibilidad"),
+    input_norm: str = typer.Option(
+        "v1",
+        help=(
+            "Normalización fija de entradas (models/deep/normalization.py): none | v1. "
+            "Con --pretrained-checkpoint se usa la del checkpoint."
+        ),
+    ),
 ) -> None:
     """Entrena/afina un SmallUNet sobre el split de train/val de eventos
     de Chile (features/dataset/, ver docs/dataset-card.md). Con
@@ -343,15 +362,17 @@ def finetune(
         effective_depth = pretrained_config.depth
         effective_focal_alpha = pretrained_config.focal_alpha
         effective_focal_gamma = pretrained_config.focal_gamma
+        effective_input_norm = pretrained_config.input_norm
     else:
         effective_lr = lr if lr is not None else _SCRATCH_DEFAULT_LR
         effective_base_channels = base_channels
         effective_depth = depth
         effective_focal_alpha = focal_alpha
         effective_focal_gamma = focal_gamma
+        effective_input_norm = input_norm
         model = SmallUNet(
             in_channels=len(CHANNEL_ORDER), base_channels=effective_base_channels,
-            depth=effective_depth,
+            depth=effective_depth, input_norm=input_norm,
         )
 
     settings = get_settings()
@@ -378,7 +399,7 @@ def finetune(
         base_channels=effective_base_channels, depth=effective_depth,
         lr=effective_lr, batch_size=batch_size, seed=seed,
         focal_alpha=effective_focal_alpha, focal_gamma=effective_focal_gamma,
-        max_epochs=max_epochs, patience=patience,
+        max_epochs=max_epochs, patience=patience, input_norm=effective_input_norm,
         data_paths=(str(dataset_dir),),
         pretrained_checkpoint=str(pretrained_checkpoint) if pretrained_checkpoint else None,
     )

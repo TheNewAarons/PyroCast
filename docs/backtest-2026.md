@@ -61,7 +61,7 @@ Ninguno de estos 7 hallazgos se ocultó ni se "arregló para que el número se v
 ## 4. Modelos evaluados
 
 - **Autómata celular (P7)**: `CellularAutomatonModel`, parámetros **HEURÍSTICOS POR DEFECTO** (`base_spread_prob=0.3`, `slope_coefficient=4.0`, `wind_coefficient=0.2`), **NO calibrados contra incendios reales de Chile**. `calibrate.py` solo soporta muestras sintéticas de un único paso simulado; extenderlo a trayectorias multi-día reales es una limitación preexistente (`docs/limitations.md`). El enunciado hablaba del "autómata celular calibrado (P7)": el evaluado **no** lo está.
-- **U-Net (P9-P11)**: `SmallUNet`, entrenado **desde cero** (sin preentrenamiento en NDWS/Kaggle: sin esas credenciales) sobre los **11 eventos de train** del split sin fuga (`pyrocast-train finetune`, semilla 42, early stopping), calibrado con regresión isotónica sobre los **2 eventos de val** (`pyrocast-calibrate run --chile-val`). El historial de entrenamiento está en `runs/finetune_2026_v3/history.csv` (no versionado). El ECE ~0 post-calibración sobre val es estructural (se ajusta y evalúa sobre lo mismo, `docs/calibration.md`); `docs/results.md` sección 3 reporta además la calibración fuera de muestra sobre test.
+- **U-Net (P9-P11)**: `SmallUNet`, entrenado **desde cero** (sin preentrenamiento en NDWS/Kaggle: sin esas credenciales) sobre los **11 eventos de train** del split sin fuga (`pyrocast-train finetune`, semilla 42, early stopping), calibrado con regresión isotónica sobre los **2 eventos de val** (`pyrocast-calibrate run --chile-val`). El historial de entrenamiento está en `runs/finetune_2026_v4/history.csv` (no versionado). El ECE ~0 post-calibración sobre val es estructural (se ajusta y evalúa sobre lo mismo, `docs/calibration.md`); `docs/results.md` sección 3 reporta además la calibración fuera de muestra sobre test.
 
 **El U-Net vio solo 11 eventos reales**, órdenes de magnitud menos que NDWS (18.545 chips): cualquier resultado débil debe leerse a la luz de ese tamaño, no como evidencia de que la arquitectura sea inadecuada.
 
@@ -101,12 +101,12 @@ Comandos exactos y commit de git usados, embebidos en cada resultado (`bench/res
 
 ```
 pyrocast-models backtest --n-bootstrap 1000 --seed 42
-pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42
-pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42
-pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42
+pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v4/best.pt --n-bootstrap 1000 --seed 42
+pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v4/best.pt --n-bootstrap 1000 --seed 42
+pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v4/best.pt --n-bootstrap 1000 --seed 42
 ```
 
-Para reproducir de punta a punta con las mismas credenciales: ingerir FIRMS/DEM/WorldCover/ERA5/Sentinel-2 para las fechas y bboxes de la sección 2, `pyrocast-features build-dataset --event-ids <ids>` por evento, `pyrocast-features resplit` (split por grupos), `pyrocast-train finetune --run-dir runs/finetune_2026_v3 --seed 42`, `pyrocast-calibrate run --checkpoint runs/finetune_2026_v3/best.pt --chile-val`, y los comandos de arriba.
+Para reproducir de punta a punta con las mismas credenciales: ingerir FIRMS/DEM/WorldCover/ERA5/Sentinel-2 para las fechas y bboxes de la sección 2, `pyrocast-features build-dataset --event-ids <ids>` por evento, `pyrocast-features resplit` (split por grupos), `pyrocast-train finetune --run-dir runs/finetune_2026_v4 --seed 42`, `pyrocast-calibrate run --checkpoint runs/finetune_2026_v3/best.pt --chile-val`, y los comandos de arriba.
 
 ## 10. Resultados anteriores con el split con fuga (REEMPLAZADOS)
 

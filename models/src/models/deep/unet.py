@@ -25,6 +25,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from models.deep.normalization import normalize_inputs
+
 _NUM_GROUPS = 8
 
 
@@ -73,8 +75,13 @@ class _Up(nn.Module):
 
 
 class SmallUNet(nn.Module):
-    def __init__(self, in_channels: int = 11, base_channels: int = 16, depth: int = 3) -> None:
+    def __init__(
+        self, in_channels: int = 11, base_channels: int = 16, depth: int = 3,
+        input_norm: str = "none",
+    ) -> None:
         super().__init__()
+        normalize_inputs(torch.zeros(1, in_channels, 1, 1), input_norm)  # valida el modo
+        self.input_norm = input_norm
         if base_channels % _NUM_GROUPS != 0:
             raise ValueError(
                 f"base_channels debe ser múltiplo de {_NUM_GROUPS} (GroupNorm) -- "
@@ -93,6 +100,9 @@ class SmallUNet(nn.Module):
         self.out_conv = nn.Conv2d(base_channels, 1, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # normalización fija de entradas (models/deep/normalization.py); sin
+        # parámetros ni buffers: el state_dict no cambia.
+        x = normalize_inputs(x, self.input_norm)
         skips = [self.in_conv(x)]
         for down in self.downs:
             skips.append(down(skips[-1]))

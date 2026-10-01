@@ -170,3 +170,29 @@ def test_run_backtest_rejects_a_predict_result_outside_zero_one_range():
     events = [_make_event(event_id=1)]
     with pytest.raises(ValueError, match="event 1"):
         run_backtest(_OutOfRangeModel(), events, n_bootstrap=10, seed=1)
+
+
+def test_anchor_day_is_excluded_from_metrics_by_default():
+    # un modelo que solo "predice" el ancla conocido del día 0 (lo mismo que
+    # CalibratedUNet/CellularAutomatonModel hacen en el día 0) y nada después no
+    # debe sacar IoU > 0: el día 0 coincide con la verdad por construcción.
+    class _AnchorOnly:
+        def predict(self, event):
+            out = np.zeros((event.sizes["day"], event.sizes["y"], event.sizes["x"]))
+            out[0] = event.values[0, CHANNEL_ORDER.index("fire_mask")]
+            return out
+
+    event = _make_event(1, n_days=3, size=4, fire_frac=0.25)
+    event.values[1:, CHANNEL_ORDER.index("fire_mask")] = 1.0  # el fuego crece desde el día 1
+    event.values[0, CHANNEL_ORDER.index("fire_mask")] = 0.0
+    event.values[0, CHANNEL_ORDER.index("fire_mask"), 0, 0] = 1.0  # ancla: 1 celda
+    default = run_backtest(_AnchorOnly(), [event], n_bootstrap=1).per_event[0]
+    with_anchor = run_backtest(_AnchorOnly(), [event], n_bootstrap=1,
+                               exclude_anchor_day=False).per_event[0]
+    assert default.iou == 0.0 and default.dice == 0.0
+    assert with_anchor.iou > 0.0
+
+
+def test_exclude_anchor_day_needs_at_least_two_days():
+    with pytest.raises(ValueError, match="al menos 2 días"):
+        run_backtest(_ConstantModel(), [_make_event(1, n_days=1)], n_bootstrap=1)

@@ -33,7 +33,7 @@ from features.dataset.split import (
 from shared.model_protocol import FireSpreadModel
 
 from models.cellular_automata.model import CellularAutomatonModel
-from models.cli import _exact_command, _git_commit_hash, load_split_events
+from models.cli import _exact_command, _git_commit_hash
 from models.deep.calibration import (
     CalibratedUNet,
     _checkpoint_fingerprint,
@@ -44,6 +44,7 @@ from models.deep.ensemble import BlendEnsemble, StackingEnsemble, select_blend_w
 from models.deep.train import ChileFinetuneDataset
 from models.evaluation.backtest import run_backtest
 from models.evaluation.metrics import brier_score, ece_score, reliability_bins
+from models.events import load_split_events
 
 N_BINS = 10
 THRESHOLD = 0.5
@@ -149,7 +150,7 @@ def build_artifacts(
             truth = _cumulative_truth(event)
             examples[f"{event_id}__truth_final"] = truth[-1]
             if split == "test":
-                backtest_true.append(truth.astype("float64").ravel())
+                backtest_true.append(truth[1:].astype("float64").ravel())  # sin el ancla
             for name, model in models.items():
                 pred = model.predict(event)
                 metrics = run_backtest(_Precomputed(pred), [event], n_bootstrap=1, seed=seed,
@@ -162,7 +163,7 @@ def build_artifacts(
                 })
                 examples[f"{event_id}__{name}_final"] = pred[-1].astype("float32")
                 if split == "test":
-                    backtest_pred[name].append(pred.ravel())
+                    backtest_pred[name].append(pred[1:].ravel())
 
     calibration_one_step: dict[str, Any] = {}
     for split in ("val", "test"):
