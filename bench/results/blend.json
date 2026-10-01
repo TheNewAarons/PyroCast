@@ -1,27 +1,27 @@
 {
   "aggregate": {
     "brier": {
-      "lower": 0.07371055479532751,
-      "point_estimate": 0.0824318649017852,
-      "upper": 0.09115317500824288
+      "lower": 0.06296372639380578,
+      "point_estimate": 0.0641039937898911,
+      "upper": 0.06524426118597641
     },
     "dice": {
-      "lower": 0.5608194622279129,
-      "point_estimate": 0.6222048353750625,
-      "upper": 0.6835902085222122
+      "lower": 0.7071161048689139,
+      "point_estimate": 0.7195681303089416,
+      "upper": 0.7320201557489693
     },
     "ece": {
-      "lower": 0.02361749772370403,
-      "point_estimate": 0.06777708311869898,
-      "upper": 0.11193666851369395
+      "lower": 0.01188029457968139,
+      "point_estimate": 0.04715049371913229,
+      "upper": 0.0824206928585832
     },
     "iou": {
-      "lower": 0.3896797153024911,
-      "point_estimate": 0.45448173092948246,
-      "upper": 0.5192837465564738
+      "lower": 0.5469293163383546,
+      "point_estimate": 0.5621207275333391,
+      "upper": 0.5773121387283237
     }
   },
-  "command": "pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42",
+  "command": "pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42",
   "confidence": 0.95,
   "config": {
     "ca_params": {
@@ -41,31 +41,31 @@
       "slope_coefficient": 4.0,
       "wind_coefficient": 0.2
     },
-    "calibration": "runs/finetune_2026_v5/best.calibrator.pt",
-    "checkpoint": "runs/finetune_2026_v5/best.pt",
+    "calibration": "runs/finetune_2026_v6/best.calibrator.pt",
+    "checkpoint": "runs/finetune_2026_v6/best.pt",
     "fit_split": "val",
     "weight_selected_on_val": true,
     "weight_unet": 0.7
   },
   "ece_bins": 10,
-  "git_commit": "96efa2c3f414c38a4cf61de9265dfa1666424942",
+  "git_commit": "cca1e3b6005c171ef6b97a6e0a6b80c0a285d0f5",
   "model_name": "blend",
   "n_bootstrap": 1000,
   "n_events": 2,
   "per_event": [
     {
-      "brier": 0.09115317500824288,
-      "dice": 0.5608194622279129,
-      "ece": 0.11193666851369395,
+      "brier": 0.06524426118597641,
+      "dice": 0.7071161048689139,
+      "ece": 0.0824206928585832,
       "event_id": 1013976330,
-      "iou": 0.3896797153024911
+      "iou": 0.5469293163383546
     },
     {
-      "brier": 0.07371055479532751,
-      "dice": 0.6835902085222122,
-      "ece": 0.02361749772370403,
+      "brier": 0.06296372639380578,
+      "dice": 0.7320201557489693,
+      "ece": 0.01188029457968139,
       "event_id": 2582836092,
-      "iou": 0.5192837465564738
+      "iou": 0.5773121387283237
     }
   ],
   "seed": 42,

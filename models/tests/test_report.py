@@ -348,3 +348,11 @@ def test_report_flags_a_detected_split_leak_loudly(workspace, tmp_path):
                            "gap_km": 0.0, "gap_days": 0}])
     text = build_report(results, docs, tmp_path / "out")[0].read_text()
     assert "**FUGA DETECTADA**" in text and "22 (test) y 7 (val)" in text
+
+
+def test_loader_ignores_unrelated_json_files_in_the_results_dir(workspace, tmp_path):
+    results, docs = workspace
+    (results / "audit_list.json").write_text(json.dumps([{"event_id": 1}]))
+    (results / "other_dict.json").write_text(json.dumps({"hello": "world"}))
+    text = build_report(results, docs, tmp_path / "out")[0].read_text()
+    assert "Resumen" in text

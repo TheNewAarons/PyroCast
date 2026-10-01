@@ -196,6 +196,8 @@ def load_inputs(results_dir: Path, docs_dir: Path) -> Inputs:
     examples: dict[str, np.ndarray] | None = None
     for path in sorted(results_dir.glob("*.json")):
         data = json.loads(path.read_text())
+        if not isinstance(data, dict):  # p. ej. ndvi_fix_audit.json (una lista de auditoría)
+            continue
         if data.get("kind") == "report_artifacts":
             artifacts = data
         elif "model_name" in data and "per_event" in data:

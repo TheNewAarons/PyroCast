@@ -70,11 +70,11 @@ usa 30 m / 3 h); no es equivalente. Detalle en [`CLAUDE.md`](CLAUDE.md) y
 | Modelo | IoU ↑ | Dice ↑ | Brier ↓ | ECE ↓ |
 |---|---|---|---|---|
 | Autómata celular (sin calibrar) | 0.380 | 0.538 | 0.110 | 0.105 |
-| U-Net (calibrado) | 0.450 | 0.614 | 0.108 | 0.090 |
-| Ensamble: blend | 0.454 | 0.622 | 0.082 | 0.068 |
-| Ensamble: stacking | 0.388 | 0.557 | 0.095 | 0.126 |
+| U-Net (calibrado) | 0.563 | 0.720 | 0.076 | 0.070 |
+| Ensamble: blend | 0.562 | 0.720 | 0.064 | 0.047 |
+| Ensamble: stacking | 0.527 | 0.690 | 0.075 | 0.121 |
 
-Backtest sobre incendios reales de Chile 2025-2026, media sobre **2 eventos de test**. En IoU ↑, Dice ↑, Brier ↓, ECE ↓ todos los intervalos se solapan. Con tan pocos eventos **no es una comparación estadísticamente robusta**: ningún modelo queda demostrado como mejor. Intervalos, mapas, calibración y análisis de fallas en [`docs/results.md`](docs/results.md).
+Backtest sobre incendios reales de Chile 2025-2026, media sobre **2 eventos de test**. Con tan pocos eventos **no es una comparación estadísticamente robusta**: ningún modelo queda demostrado como mejor. Intervalos, mapas, calibración y análisis de fallas en [`docs/results.md`](docs/results.md).
 <!-- results-summary:end -->
 
 Honestidad por adelantado: el U-Net se entrenó desde cero con muy pocos eventos

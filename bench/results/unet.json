@@ -1,51 +1,51 @@
 {
   "aggregate": {
     "brier": {
-      "lower": 0.08138758661515491,
-      "point_estimate": 0.10774852726801352,
-      "upper": 0.13410946792087214
+      "lower": 0.07188519208070802,
+      "point_estimate": 0.07575556019207927,
+      "upper": 0.07962592830345053
     },
     "dice": {
-      "lower": 0.5209656925031766,
-      "point_estimate": 0.614047001037739,
-      "upper": 0.7071283095723014
+      "lower": 0.6908831908831908,
+      "point_estimate": 0.7198565720406593,
+      "upper": 0.748829953198128
     },
     "ece": {
-      "lower": 0.047061605856951405,
-      "point_estimate": 0.08985140729040939,
-      "upper": 0.13264120872386737
+      "lower": 0.049109773199730755,
+      "point_estimate": 0.06994145269178537,
+      "upper": 0.09077313218383998
     },
     "iou": {
-      "lower": 0.35223367697594504,
-      "point_estimate": 0.4495887981603103,
-      "upper": 0.5469439193446755
+      "lower": 0.5277475516866159,
+      "point_estimate": 0.5631256461674975,
+      "upper": 0.5985037406483791
     }
   },
-  "command": "pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42",
+  "command": "pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42",
   "confidence": 0.95,
   "config": {
-    "calibration": "runs/finetune_2026_v5/best.calibrator.pt",
-    "checkpoint": "runs/finetune_2026_v5/best.pt"
+    "calibration": "runs/finetune_2026_v6/best.calibrator.pt",
+    "checkpoint": "runs/finetune_2026_v6/best.pt"
   },
   "ece_bins": 10,
-  "git_commit": "96efa2c3f414c38a4cf61de9265dfa1666424942",
+  "git_commit": "cca1e3b6005c171ef6b97a6e0a6b80c0a285d0f5",
   "model_name": "unet",
   "n_bootstrap": 1000,
   "n_events": 2,
   "per_event": [
     {
-      "brier": 0.13410946792087214,
-      "dice": 0.5209656925031766,
-      "ece": 0.13264120872386737,
+      "brier": 0.07962592830345053,
+      "dice": 0.6908831908831908,
+      "ece": 0.09077313218383998,
       "event_id": 1013976330,
-      "iou": 0.35223367697594504
+      "iou": 0.5277475516866159
     },
     {
-      "brier": 0.08138758661515491,
-      "dice": 0.7071283095723014,
-      "ece": 0.047061605856951405,
+      "brier": 0.07188519208070802,
+      "dice": 0.748829953198128,
+      "ece": 0.049109773199730755,
       "event_id": 2582836092,
-      "iou": 0.5469439193446755
+      "iou": 0.5985037406483791
     }
   ],
   "seed": 42,

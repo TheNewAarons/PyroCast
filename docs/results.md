@@ -8,10 +8,10 @@
 
 Backtest sobre el split de test de incendios reales de Chile 2025-2026 (n = 2 eventos de test). Modelos con resultados: Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: blend, Ensamble: stacking.
 
-- IoU ↑: mejor Ensamble: blend (0.454 [0.390, 0.519]); intervalo solapado con Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: stacking: **diferencia no distinguible** con este n.
-- Dice ↑: mejor Ensamble: blend (0.622 [0.561, 0.684]); intervalo solapado con Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: stacking: **diferencia no distinguible** con este n.
-- Brier ↓: mejor Ensamble: blend (0.082 [0.074, 0.091]); intervalo solapado con Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: stacking: **diferencia no distinguible** con este n.
-- ECE ↓: mejor Ensamble: blend (0.068 [0.024, 0.112]); intervalo solapado con Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: stacking: **diferencia no distinguible** con este n.
+- IoU ↑: mejor U-Net (calibrado) (0.563 [0.528, 0.599]); intervalo solapado con Ensamble: blend, Ensamble: stacking: **diferencia no distinguible** con este n.
+- Dice ↑: mejor U-Net (calibrado) (0.720 [0.691, 0.749]); intervalo solapado con Ensamble: blend, Ensamble: stacking: **diferencia no distinguible** con este n.
+- Brier ↓: mejor Ensamble: blend (0.064 [0.063, 0.065]); intervalo sin solape con los demás modelos.
+- ECE ↓: mejor Ensamble: blend (0.047 [0.012, 0.082]); intervalo solapado con Autómata celular (sin calibrar), U-Net (calibrado): **diferencia no distinguible** con este n.
 
 Con tan pocos eventos de test los intervalos bootstrap (remuestreo de valores por evento) son anchos o, con n pequeño, engañosamente angostos: **esto no es una comparación estadísticamente robusta**. Ver las secciones 2 y 5.
 
@@ -21,10 +21,10 @@ Con tan pocos eventos de test los intervalos bootstrap (remuestreo de valores po
 
 | Métrica (media [IC 95 % bootstrap]) | Autómata celular (sin calibrar) | U-Net (calibrado) | Ensamble: blend | Ensamble: stacking |
 |---|---|---|---|---|
-| IoU ↑ | 0.380 [0.252, 0.508] | 0.450 [0.352, 0.547] | 0.454 [0.390, 0.519] | 0.388 [0.334, 0.443] |
-| Dice ↑ | 0.538 [0.403, 0.674] | 0.614 [0.521, 0.707] | 0.622 [0.561, 0.684] | 0.557 [0.500, 0.614] |
-| Brier ↓ | 0.110 [0.085, 0.135] | 0.108 [0.081, 0.134] | 0.082 [0.074, 0.091] | 0.095 [0.084, 0.107] |
-| ECE ↓ | 0.105 [0.079, 0.132] | 0.090 [0.047, 0.133] | 0.068 [0.024, 0.112] | 0.126 [0.104, 0.149] |
+| IoU ↑ | 0.380 [0.252, 0.508] | 0.563 [0.528, 0.599] | 0.562 [0.547, 0.577] | 0.527 [0.520, 0.535] |
+| Dice ↑ | 0.538 [0.403, 0.674] | 0.720 [0.691, 0.749] | 0.720 [0.707, 0.732] | 0.690 [0.684, 0.697] |
+| Brier ↓ | 0.110 [0.085, 0.135] | 0.076 [0.072, 0.080] | 0.064 [0.063, 0.065] | 0.075 [0.074, 0.076] |
+| ECE ↓ | 0.105 [0.079, 0.132] | 0.070 [0.049, 0.091] | 0.047 [0.012, 0.082] | 0.121 [0.100, 0.142] |
 
 ### 2.2 Test interno (P8)
 
@@ -35,13 +35,13 @@ El 'split de test interno' del dataset de eventos de Chile **es** el conjunto ev
 | event_id | modelo | IoU ↑ | Dice ↑ | Brier ↓ | ECE ↓ |
 |---|---|---|---|---|---|
 | 1013976330 | Autómata celular (sin calibrar) | 0.508 | 0.674 | 0.085 | 0.079 |
-| 1013976330 | U-Net (calibrado) | 0.352 | 0.521 | 0.134 | 0.133 |
-| 1013976330 | Ensamble: blend | 0.390 | 0.561 | 0.091 | 0.112 |
-| 1013976330 | Ensamble: stacking | 0.334 | 0.500 | 0.107 | 0.149 |
+| 1013976330 | U-Net (calibrado) | 0.528 | 0.691 | 0.080 | 0.091 |
+| 1013976330 | Ensamble: blend | 0.547 | 0.707 | 0.065 | 0.082 |
+| 1013976330 | Ensamble: stacking | 0.520 | 0.684 | 0.074 | 0.142 |
 | 2582836092 | Autómata celular (sin calibrar) | 0.252 | 0.403 | 0.135 | 0.132 |
-| 2582836092 | U-Net (calibrado) | 0.547 | 0.707 | 0.081 | 0.047 |
-| 2582836092 | Ensamble: blend | 0.519 | 0.684 | 0.074 | 0.024 |
-| 2582836092 | Ensamble: stacking | 0.443 | 0.614 | 0.084 | 0.104 |
+| 2582836092 | U-Net (calibrado) | 0.599 | 0.749 | 0.072 | 0.049 |
+| 2582836092 | Ensamble: blend | 0.577 | 0.732 | 0.063 | 0.012 |
+| 2582836092 | Ensamble: stacking | 0.535 | 0.697 | 0.076 | 0.100 |
 
 ![IoU por evento de test y modelo (datos de bench/results/).](figures/per_event_iou.png)
 
@@ -53,8 +53,8 @@ El 'split de test interno' del dataset de eventos de Chile **es** el conjunto ev
 
 | conjunto | n celdas | Brier antes | Brier después | ECE antes | ECE después |
 |---|---|---|---|---|---|
-| val (conjunto de AJUSTE del calibrador) | 83826 | 0.0560 | 0.0369 | 0.1237 | 0.0000 |
-| test (fuera de muestra) | 11400 | 0.0563 | 0.0334 | 0.1425 | 0.0265 |
+| val (conjunto de AJUSTE del calibrador) | 83826 | 0.0650 | 0.0365 | 0.1473 | 0.0000 |
+| test (fuera de muestra) | 11400 | 0.0621 | 0.0363 | 0.1610 | 0.0303 |
 
 Pares (entrada del día d, máscara del día d+1) de un solo paso, el mismo contrato con que se entrenó y calibró. **El ECE 'después' sobre val es estructuralmente ~0** (el calibrador se ajusta sobre esos mismos datos, `docs/calibration.md`): solo la fila de test mide calibración fuera de muestra.
 
@@ -71,33 +71,33 @@ Pares (entrada del día d, máscara del día d+1) de un solo paso, el mismo cont
 | modelo | Brier | ECE |
 |---|---|---|
 | Autómata celular (sin calibrar) | 0.1135 | 0.1090 |
-| U-Net (calibrado) | 0.1036 | 0.0814 |
-| Ensamble: blend | 0.0811 | 0.0455 |
-| Ensamble: stacking | 0.0933 | 0.1081 |
+| U-Net (calibrado) | 0.0751 | 0.0640 |
+| Ensamble: blend | 0.0639 | 0.0312 |
+| Ensamble: stacking | 0.0751 | 0.1141 |
 
 ## 4. Predicciones contra el incendio real
 
 **Criterio de selección: ninguno que favorezca al modelo.** Se muestran *todos* los eventos retenidos (no vistos al entrenar los pesos): los de **test** (evidencia fuera de muestra) y los de **val** (con rótulo: val se usó para calibrar el U-Net y elegir el peso/coeficientes del ensamble, así que NO es evidencia fuera de muestra). Cada caso se rotula 'bueno' o 'malo' según el IoU del U-Net, calculado de los datos. Cada panel muestra el último día del horizonte; el contorno negro es el área realmente quemada acumulada.
 
-### Evento 1013976330 (test) — caso bueno para U-Net (calibrado) (IoU 0.352)
+### Evento 1013976330 (test) — caso bueno para U-Net (calibrado) (IoU 0.528)
 
 ![Evento 1013976330 (test): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_test_1013976330.png)
 
 *Evento 1013976330 (test): verdad acumulada y probabilidad predicha por modelo, último día.*
 
-### Evento 2582836092 (test) — caso bueno para U-Net (calibrado) (IoU 0.547)
+### Evento 2582836092 (test) — caso bueno para U-Net (calibrado) (IoU 0.599)
 
 ![Evento 2582836092 (test): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_test_2582836092.png)
 
 *Evento 2582836092 (test): verdad acumulada y probabilidad predicha por modelo, último día.*
 
-### Evento 1277049523 (val) — caso bueno para U-Net (calibrado) (IoU 0.386)
+### Evento 1277049523 (val) — caso bueno para U-Net (calibrado) (IoU 0.424)
 
 ![Evento 1277049523 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_1277049523.png)
 
 *Evento 1277049523 (val): verdad acumulada y probabilidad predicha por modelo, último día.*
 
-### Evento 2970931921 (val) — caso bueno para U-Net (calibrado) (IoU 0.432)
+### Evento 2970931921 (val) — caso bueno para U-Net (calibrado) (IoU 0.505)
 
 ![Evento 2970931921 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_2970931921.png)
 
@@ -128,6 +128,8 @@ Descriptores del evento frente a los eventos de entrenamiento:
 ### Evento 1277049523 (val) — val: no es evidencia fuera de muestra
 
 - Autómata celular (sin calibrar): IoU 0.012, Dice 0.024, Brier 0.301; celdas con prob ≥ 0,5 en el último día: 78 frente a 4080 realmente quemadas (razón 0.02) — **subpredice**.
+- Ensamble: blend: IoU 0.299, Dice 0.461, Brier 0.179; celdas con prob ≥ 0,5 en el último día: 3089 frente a 4080 realmente quemadas (razón 0.76).
+- Ensamble: stacking: IoU 0.278, Dice 0.435, Brier 0.167; celdas con prob ≥ 0,5 en el último día: 2943 frente a 4080 realmente quemadas (razón 0.72).
 
 Descriptores del evento frente a los eventos de entrenamiento:
 
@@ -156,7 +158,7 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 
 **Además** (de la evaluación, no solo del diseño): n = 2 eventos de test; autómata celular sin calibrar contra incendios reales; U-Net entrenado desde cero con eventos de Chile; pesos del ensamble ajustados sobre un val que también calibró el U-Net. Ver `docs/backtest-2026.md` y `docs/limitations.md`.
 
-`docs/limitations.md` registra 71 limitaciones en total. Títulos:
+`docs/limitations.md` registra 74 limitaciones en total. Títulos:
 
 - Resolución de ERA5-Land vs. grilla de trabajo
 - Humedad relativa de ERA5-Land es aproximada, no medida
@@ -186,7 +188,6 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - 8 direcciones (vecindad de Moore), no propagación continua
 - Autómata celular: `np.clip(p_dir, 0.0, 1.0)` satura a spread CIERTO en condiciones reales de incendios chilenos, no solo en casos extremos de laboratorio
 - `simulate_fire_spread` rechaza `elevation`/`wind_u`/`wind_v` no finitos (NaN/inf) con un error explícito
-- Backtest: la evaluación del día 0 es tautológica por construcción
 - Bootstrap del backtest remuestrea valores por evento, no eventos reales ni píxeles
 - `ece_score` con probabilidades sin calibrar en absoluto
 - El autómata celular sigue sin modelar extinción, y el backtest ya no penaliza esa simplificación como si fuera un error adicional (pero la simplificación en sí sigue ahí)
@@ -194,6 +195,9 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - El autómata celular usado en `docs/backtest-2026.md` NO está calibrado contra incendios reales de Chile
 - El backtest tiene 2 eventos de test, y el "test interno" del dataset de Chile es ese mismo conjunto
 - Selección de eventos por umbral de detecciones (≥40)
+- Una sola corrida con una semilla (42) por modelo
+- Entrenamiento de un paso, evaluación en rollout (sesgo de exposición)
+- El split por grupos (<= 10 km, <= 3 días) controla la fuga espacial y temporal directa, no la correlación climática regional
 - La humedad relativa derivada de NDWS asume presión estándar a nivel del mar (101325 Pa), no la presión real de cada ubicación
 - `fuel_type` de las muestras de NDWS es SIEMPRE "desconocido" (código 99)
 - `models/deep/tfrecord_reader.py` nunca se probó contra un archivo real descargado de Kaggle
@@ -214,6 +218,7 @@ Consolidado desde `docs/limitations.md` (ahí está el detalle completo y cada h
 - Reentrenar sobre un `run_dir` ya usado mezcla dos corridas
 - `finetune` no valida que `in_channels` del checkpoint coincida con el tensor de Chile antes de fallar
 - La pérdida promedio por época promedia sobre BATCHES, no sobre muestras
+- Normalización de entradas del U-Net (`input_norm="v1"`) con constantes fijas y simplificaciones
 - La tabla antes/después de `docs/calibration.md` es de un checkpoint de FIXTURE sintético
 - Sin split de calibración separado del de validación
 - `CalibratedUNet` no valida `in_channels` contra el tensor de entrada antes de fallar
@@ -241,12 +246,12 @@ make report             # solo lee bench/results/ y docs/
 
 | archivo | modelo | comando exacto | commit | semilla | remuestreos | eventos |
 |---|---|---|---|---|---|---|
-| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `96efa2c3f414` | 42 | 1000 | 2 |
-| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42` | `96efa2c3f414` | 42 | 1000 | 2 |
-| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42` | `96efa2c3f414` | 42 | 1000 | 2 |
-| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v5/best.pt --n-bootstrap 1000 --seed 42` | `96efa2c3f414` | 42 | 1000 | 2 |
+| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
+| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
+| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
+| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42` | `cca1e3b6005c` | 42 | 1000 | 2 |
 
-Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v5/best.pt --seed 42`, commit `96efa2c3f414`, generados 2026-10-01T18:59:16Z, checkpoint `runs/finetune_2026_v5/best.pt` (huella sha256 `911813b3d63d2399…`), semilla 42, peso U-Net del blend 0.7.
+Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v6/best.pt --seed 42`, commit `cca1e3b6005c`, generados 2026-10-01T19:06:26Z, checkpoint `runs/finetune_2026_v6/best.pt` (huella sha256 `9ee5e734b2bfe2a9…`), semilla 42, peso U-Net del blend 0.7.
 
 ### Fechas de los datos usados
 

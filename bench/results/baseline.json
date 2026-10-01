@@ -41,7 +41,7 @@
     "wind_coefficient": 0.2
   },
   "ece_bins": 10,
-  "git_commit": "96efa2c3f414c38a4cf61de9265dfa1666424942",
+  "git_commit": "cca1e3b6005c171ef6b97a6e0a6b80c0a285d0f5",
   "model_name": "cellular_automata",
   "n_bootstrap": 1000,
   "n_events": 2,

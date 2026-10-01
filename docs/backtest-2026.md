@@ -6,16 +6,17 @@ Este documento reporta el resultado de evaluar y comparar el autómata celular (
 
 
 
-**IMPORTANTE -- este documento fue reescrito tras una revisión independiente (`docs/review.md`).** La primera versión tenía cuatro defectos de evaluación/entrenamiento que cambiaron las conclusiones:
+**IMPORTANTE -- este documento fue reescrito tras una revisión independiente (`docs/review.md`).** La primera versión tenía defectos de datos, entrenamiento y evaluación que cambiaron las conclusiones:
 
-1. **Fuga espacio-temporal entre splits (C1)**: el evento de test `203187374` tenía la extensión de fuego pegada (0 km, mismos días) a un evento de val y a 1.4 km de otro -- los tres son el mismo complejo partido por el clustering. El calibrador, el peso del blend y el stacking se ajustan sobre val, así que el test no era retenido. Se rehizo el split por **grupos de eventos acoplados** (<= 10 km, <= 3 días).
-2. **Desajuste objetivo de entrenamiento vs. evaluación (H4)**: el U-Net se entrenaba para predecir el fuego *activo* del día siguiente y se evaluaba (como el autómata celular) contra el área quemada *acumulada*; en el rollout no propagaba nada. Ahora se entrena con área quemada acumulada.
-3. **Entradas sin normalizar (H1)** y **entrenamiento con días de padding sin fuego (H2)**: se agregó normalización fija y se recortan los eventos de entrenamiento igual que en la evaluación.
-4. **El día 0 (ancla conocida) entraba en las métricas (H3)**: ahora se excluye por defecto.
+1. **NDVI incorrecto en todos los tensores (C2)**: el offset BOA de Sentinel-2 se restaba por segunda vez (los composites de CDSE ya lo traen aplicado), dando NDVI de hasta ~10 (mediana ~1.8). Corregido, con máscara de píxeles oscuros y un chequeo de rango [-1, 1]; los tensores locales se repararon (`scripts/migrate_ndvi_offset.py`).
+2. **Fuga espacio-temporal entre splits (C1)**: el evento de test `203187374` tenía la extensión de fuego pegada (0 km, mismos días) a un evento de val y a 1.4 km de otro -- los tres son el mismo complejo partido por el clustering. El calibrador, el peso del blend y el stacking se ajustan sobre val, así que el test no era retenido. Se rehizo el split por **grupos de eventos acoplados** (<= 10 km, <= 3 días).
+3. **Desajuste objetivo de entrenamiento vs. evaluación (H4)**: el U-Net se entrenaba para predecir el fuego *activo* del día siguiente y se evaluaba (como el autómata celular) contra el área quemada *acumulada*; en el rollout no propagaba nada. Ahora se entrena con área quemada acumulada.
+4. **Entradas sin normalizar (H1)** y **entrenamiento con días de padding sin fuego (H2)**: se agregó normalización fija y se recortan los eventos de entrenamiento igual que en la evaluación.
+5. **El día 0 (ancla conocida) entraba en las métricas (H3)**: ahora se excluye por defecto.
 
-Todo (split, entrenamiento, calibración, backtest, ensambles, reporte) se volvió a correr. Los resultados anteriores se conservan en la sección 10, rotulados como reemplazados.
+Todo (datos, split, entrenamiento, calibración, backtest, ensambles, reporte) se volvió a correr. Los resultados anteriores se conservan en la sección 10, rotulados como reemplazados.
 
-**Resultado honesto por adelantado**: con las correcciones, el U-Net calibrado propaga el fuego y su IoU/Dice agregado queda por encima del autómata celular sin calibrar, el blend elegido en val tiene el mejor Brier/ECE, y el stacking ya no gana. **Ninguna de estas diferencias es estadísticamente distinguible**: hay 2 eventos de test, los intervalos bootstrap se solapan y val (2 eventos) calibró al U-Net y eligió el peso del blend. Los números exactos, intervalos, mapas y análisis de fallas están en [`docs/results.md`](results.md) (generado desde `bench/results/`); este documento ya no los copia a mano para que no se desincronicen.
+**Resultado honesto por adelantado**: con las correcciones, el U-Net calibrado supera al autómata celular sin calibrar en IoU/Dice en los dos eventos de test (por poco en uno, por mucho en el otro) y también en los dos de val; el blend elegido en val tiene el mejor Brier/ECE con IoU/Dice iguales a los del U-Net; el stacking no mejora. **Aun así, nada de esto es estadísticamente concluyente**: hay 2 eventos de test (el bootstrap solo remuestrea dos valores por modelo: su IC es el rango entre ambos eventos, y que dos IC no se solapen no es una prueba estadística), es una sola corrida con una semilla, y val (2 eventos) calibró al U-Net y eligió el peso del blend. Los números exactos, intervalos, mapas y análisis de fallas están en [`docs/results.md`](results.md) (generado desde `bench/results/`); este documento ya no los copia a mano para que no se desincronicen.
 
 ## 1. Credenciales y datos reales usados
 
@@ -80,11 +81,11 @@ Convenciones heredadas: predicción y verdad **acumuladas** (`models/evaluation/
 
 ## 6. Comparación honesta
 
-Con el split sin fuga y el entrenamiento corregido, en los dos eventos de test el U-Net calibrado propaga el fuego; su IoU/Dice agregado es mayor que el del autómata celular, pero **el orden por evento no es consistente** (el CA gana en un evento y el U-Net en el otro; `docs/results.md` sección 2.3) y los intervalos de ambos se solapan. Brier/ECE del U-Net y del CA son parecidos. No se puede afirmar que uno sea mejor.
+Con los datos, el split y el entrenamiento corregidos, el U-Net calibrado propaga el fuego y su IoU/Dice agregado es claramente mayor que el del autómata celular sin calibrar; además supera al CA en los cuatro eventos retenidos (2 de test, 2 de val; `docs/results.md` sección 2.3 y el análisis de la sección 5). En Brier/ECE el U-Net también queda mejor. Con n=2 el IC bootstrap es solo el rango entre los dos eventos (en IoU/Dice los del U-Net y los del CA no se solapan, pero eso no es una prueba estadística), y es una sola semilla: **es una señal consistente, no una demostración**.
 
-**Cómo llegamos acá (honestidad sobre el camino)**: con el split original (con fuga) el U-Net "ganaba" en 1 de 2 eventos; al quitar la fuga y *antes* de corregir el objetivo de entrenamiento, el U-Net no predecía ninguna propagación (IoU ~0); al corregir el objetivo (área quemada acumulada) volvió a ser competitivo. Es decir, un defecto de entrenamiento había hecho parecer al U-Net mucho peor de lo que es, y la fuga lo había hecho parecer mejor. Ver `docs/review.md`.
+**Cómo llegamos acá (honestidad sobre el camino)**: con el split original (con fuga, NDVI incorrecto, objetivo de entrenamiento activo) el U-Net "ganaba" en 1 de 2 eventos; al quitar la fuga y *antes* de corregir el objetivo de entrenamiento, el U-Net no predecía ninguna propagación (IoU ~0); al corregir el objetivo volvió a ser competitivo, y al corregir el NDVI mejoró más. Es decir, defectos distintos habían hecho parecer al U-Net mejor y peor de lo que es. Ver `docs/review.md`.
 
-**Hipótesis sobre dónde falla cada modelo** (no verificadas; con 11 eventos de train y 2 de test no se puede aislar la causa): el análisis por descriptores de evento está en `docs/results.md` sección 5. En particular, el autómata celular subpredice el evento grande (`2582836092`) porque con sus parámetros por defecto el frente avanza ~1 celda por día.
+**Dónde sigue fallando el autómata celular** (hipótesis, no verificadas): subpredice los incendios grandes (`2582836092` en test, `1277049523` en val) porque con sus parámetros por defecto el frente avanza como mucho ~1 celda por día; el análisis por descriptores de evento está en `docs/results.md` sección 5.
 
 ## 7. Limitaciones de esta evaluación (además de `docs/limitations.md`)
 
@@ -102,15 +103,15 @@ Con el split sin fuga y el entrenamiento corregido, en los dos eventos de test e
 
 Implementación: `models/deep/ensemble.py`, `pyrocast-models backtest --model blend|stacking`. **Blend**: `(1-w)·CA + w·U-Net`, `w` elegido por Brier medio sobre los eventos de **val** (nunca test); el valor está en `bench/results/blend.json` (`config.weight_unet`). **Stacking**: regresión logística sobre `[logit(p_CA), logit(p_UNet)]` ajustada sobre val (coeficientes en `bench/results/stacking.json`).
 
-Lectura honesta (criterio de aceptación: ¿mejora sobre el mejor individual?): ver `docs/results.md` sección 1. El **blend** tiene el mejor Brier/ECE, con IoU/Dice prácticamente iguales a los del U-Net: es una mejora de calibración, pequeña, y con n=2 y un peso elegido sobre solo 2 eventos de val no se puede distinguir de ruido. El **stacking** no mejora (con el split sin fuga ya no gana; en la versión con fuga ganaba, sección 10).
+Lectura honesta (criterio de aceptación: ¿mejora sobre el mejor individual?): ver `docs/results.md` sección 1. El **blend** mejora Brier/ECE respecto del mejor individual, con IoU/Dice prácticamente iguales: es una mejora de calibración, pequeña, y con n=2 y un peso elegido sobre solo 2 eventos de val no se puede distinguir de ruido; **no es una mejora consistente en todas las métricas, así que no es el default**. El **stacking** no mejora (con el split sin fuga ya no gana; en la versión con fuga ganaba, sección 10).
 
-**Decisión de modelo por defecto en `serving/`: autómata celular (`CellularAutomatonModel`, parámetros por defecto)** -- sin cambios, pero por razones distintas a la primera versión:
+**Decisión de modelo por defecto en `serving/`: autómata celular (`CellularAutomatonModel`, parámetros por defecto)** -- decisión **provisional**, y ya no por falta de desempeño del U-Net sino por razones operativas y de evidencia:
 
-1. **Ningún modelo aprendido tiene una ventaja demostrada** (n=2, intervalos solapados, una sola semilla); sin evidencia, se prefiere el modelo más simple y explicable.
-2. **Operativo**: el U-Net y su calibrador son archivos `.pt` no versionados (`runs/`, `*.pt` en `.gitignore`); `serving/` no podría arrancar desde un checkout limpio ni reproducir la predicción. El CA no tiene artefactos.
+1. **Operativo (bloqueante)**: el U-Net y su calibrador son archivos `.pt` no versionados (`runs/`, `*.pt` en `.gitignore`) y `serving/` no tiene un cargador de U-Net: no podría arrancar desde un checkout limpio ni reproducir la predicción. El CA no tiene artefactos.
+2. **Evidencia insuficiente para promoverlo**: n=2 eventos de test (4 retenidos contando val, que está contaminado), una sola semilla, IC bootstrap sin valor inferencial con n=2, sin validación cruzada.
 3. **Riesgo asimétrico**: las probabilidades del U-Net dependen de un calibrador ajustado sobre 2 eventos.
 
-Costo asumido: las probabilidades del CA no están calibradas (puntaje relativo). Cambiar de default requiere (a) más eventos y un test sin solape de val, (b) varias semillas, (c) versionar el checkpoint (p. ej. en un release) con su huella sha256.
+Costo asumido: el servido usa el modelo que los datos indican como el peor de los individuales, con probabilidades sin calibrar (puntaje relativo). **Para cambiar el default** (en `docs/backlog.md`): versionar checkpoint + calibrador (p. ej. como asset de un release, con su huella sha256) y agregar un cargador en `serving/api/model_registry.py`; repetir con varias semillas; más eventos con un val independiente.
 
 ## 9. Reproducibilidad
 
@@ -136,4 +137,4 @@ Se conservan por transparencia (CLAUDE.md: no esconder ni suavizar resultados). 
 | Brier | 0.092 [0.082, 0.103] | 0.070 [0.044, 0.096] | 0.075 [0.058, 0.092] | 0.058 [0.056, 0.061] |
 | ECE | 0.091 [0.082, 0.100] | 0.064 [0.035, 0.094] | 0.074 [0.058, 0.090] | 0.038 [0.020, 0.055] |
 
-Con ese split el U-Net parecía ganar en un evento y el stacking en todo. Parte de esa ventaja venía de la fuga (el evento de test `203187374` estaba pegado a dos eventos de val) y las métricas incluían el día 0.
+Con ese split (y NDVI incorrecto, objetivo de entrenamiento activo, día 0 incluido) el U-Net parecía ganar en un evento y el stacking en todo. Parte de esa ventaja venía de la fuga (el evento de test `203187374` estaba pegado a dos eventos de val) y las métricas incluían el día 0.
