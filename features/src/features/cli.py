@@ -3,6 +3,7 @@ import datetime as dt
 import json
 
 import typer
+import xarray as xr
 from shared.config import get_settings
 from sqlalchemy import create_engine
 
@@ -14,7 +15,17 @@ from features.dataset.pipeline import (
     padded_days_for_event,
     resolve_event_sources,
 )
-from features.dataset.split import split_events
+from features.dataset.split import (
+    DEFAULT_MAX_GAP_DAYS,
+    DEFAULT_MAX_GAP_KM,
+    EventFootprint,
+    find_split_leakage,
+    footprint_from_fire_event,
+    footprint_from_tensor,
+    group_events,
+    split_events,
+    split_events_grouped,
+)
 from features.fire_state.clustering import build_fire_events
 
 # show_locals=False: los locals de un traceback pueden incluir credenciales
@@ -95,11 +106,70 @@ def build_dataset(
         event_ids.append(event.event_id)
         typer.echo(f"Evento {event.event_id}: {zarr_path}")
 
-    splits = split_events(event_ids)
+    splits = _split_or_exit(
+        {event.event_id: footprint_from_fire_event(event) for event in events}, event_ids
+    )
     (output_dir / "splits.json").write_text(json.dumps(splits, indent=2))
     typer.echo(
         f"Split: train={len(splits['train'])} val={len(splits['val'])} test={len(splits['test'])}"
     )
 
 
+def _split_or_exit(
+    footprints: dict[int, EventFootprint], event_ids: list[int]
+) -> dict[str, list[int]]:
+    if len(event_ids) < 3:
+        typer.echo(
+            f"AVISO: solo {len(event_ids)} evento(s): no se puede separar val/test; "
+            f"todo va a train (un split así no sirve para evaluar)."
+        )
+        return split_events(event_ids)
+    try:
+        return split_events_grouped(footprints)
+    except ValueError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+def resplit(
+    max_gap_km: float = typer.Option(DEFAULT_MAX_GAP_KM, help="Acoplamiento espacial (km)"),
+    max_gap_days: int = typer.Option(DEFAULT_MAX_GAP_DAYS, help="Acoplamiento temporal (días)"),
+    seed: int = typer.Option(42, help="Semilla del reparto de grupos"),
+) -> None:
+    """Rehace `splits.json` del dataset YA construido repartiendo GRUPOS de
+    eventos acoplados espacio-temporalmente (sin reconstruir tensores ni tocar
+    PostGIS). Guarda el split anterior en `splits.previous.json` y un resumen
+    (grupos, fugas del split anterior) en `split_groups.json`. Tras esto hay
+    que reentrenar/calibrar/evaluar: los modelos viejos vieron otro split."""
+    dataset_dir = get_settings().data_processed_dir / "dataset"
+    zarr_paths = sorted(dataset_dir.glob("event_*.zarr"))
+    if not zarr_paths:
+        typer.echo(f"No hay eventos Zarr en {dataset_dir}.", err=True)
+        raise typer.Exit(code=1)
+    footprints: dict[int, EventFootprint] = {}
+    for path in zarr_paths:
+        tensor = xr.open_zarr(path)["fire_event_tensor"].load()
+        footprints[int(tensor.attrs["event_id"])] = footprint_from_tensor(tensor)
+
+    splits_path = dataset_dir / "splits.json"
+    leaks_before: list[dict[str, object]] = []
+    if splits_path.exists():
+        previous = json.loads(splits_path.read_text())
+        (dataset_dir / "splits.previous.json").write_text(json.dumps(previous, indent=2))
+        leaks_before = list(find_split_leakage(previous, footprints, max_gap_km, max_gap_days))
+    splits = split_events_grouped(footprints, seed, max_gap_km=max_gap_km,
+                                  max_gap_days=max_gap_days)
+    splits_path.write_text(json.dumps(splits, indent=2))
+    (dataset_dir / "split_groups.json").write_text(json.dumps({
+        "max_gap_km": max_gap_km, "max_gap_days": max_gap_days, "seed": seed,
+        "groups": group_events(footprints, max_gap_km, max_gap_days),
+        "leakage_in_previous_split": leaks_before,
+    }, indent=2))
+    typer.echo(
+        f"Split por grupos: train={len(splits['train'])} val={len(splits['val'])} "
+        f"test={len(splits['test'])}; fugas en el split anterior: {len(leaks_before)}."
+    )
+
+
 app.command("build-dataset")(build_dataset)
+app.command("resplit")(resplit)
