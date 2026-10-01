@@ -240,7 +240,9 @@ class CalibratedUNet:
                     prob = self.calibrator.predict(raw_prob.ravel()).reshape(raw_prob.shape)
                 else:
                     prob = raw_prob
-                prob = np.clip(prob, 0.0, 1.0)
+                # la probabilidad es ACUMULADA ("¿ha ardido alguna vez?"): nunca
+                # puede bajar de un día al siguiente (igual que el autómata celular).
+                prob = np.maximum(np.clip(prob, 0.0, 1.0), output[day - 1])
                 output[day] = prob
                 current_fire_state = prob.astype("float32")
 

@@ -66,21 +66,39 @@ class NDWSPretrainDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
 
 
 class ChileFinetuneDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
-    def __init__(self, event_tensors: list[xr.DataArray]) -> None:
+    """Pares (estado del día d -> fuego del día d+1) de eventos reales.
+
+    `cumulative=True` (por defecto): el canal `fire_mask` de entrada Y el
+    objetivo son el área quemada ACUMULADA ("¿ha ardido esta celda alguna vez
+    hasta ese día?"), la MISMA convención con que el backtest evalúa y con que
+    predice el autómata celular. Con la máscara de fuego ACTIVA por día
+    (`cumulative=False`) el U-Net aprendía "el fuego activo desaparece entre
+    pasadas del satélite" y en el rollout del backtest no propagaba nada --
+    hallazgo H4 de docs/review.md (desajuste objetivo de entrenamiento vs.
+    métrica de evaluación)."""
+
+    def __init__(self, event_tensors: list[xr.DataArray], cumulative: bool = True) -> None:
         # (evento, día) por cada par consecutivo -- un evento de 1 solo
         # día no aporta ningún par (no hay "día siguiente" que predecir,
         # ver Review Focus del plan).
-        self._pairs: list[tuple[xr.DataArray, int]] = []
-        for event in event_tensors:
-            n_days = event.sizes["day"]
-            for day_index in range(n_days - 1):
-                self._pairs.append((event, day_index))
+        self._events: list[np.ndarray] = []
+        self._pairs: list[tuple[int, int]] = []
+        for event_index, event in enumerate(event_tensors):
+            values = event.values.astype("float32")
+            if cumulative:
+                values = values.copy()
+                fire = np.nan_to_num(values[:, _FIRE_MASK_CHANNEL_INDEX], nan=0.0) >= 0.5
+                values[:, _FIRE_MASK_CHANNEL_INDEX] = np.logical_or.accumulate(fire, axis=0)
+            self._events.append(values)
+            for day_index in range(event.sizes["day"] - 1):
+                self._pairs.append((event_index, day_index))
 
     def __len__(self) -> int:
         return len(self._pairs)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        event, day_index = self._pairs[index]
+        event_index, day_index = self._pairs[index]
+        values = self._events[event_index]
         # eventos reales cerca de bordes de cobertura (WorldCover,
         # Sentinel-2) pueden dejar una fracción minúscula de NaN
         # residual incluso después del relleno con el promedio regional
@@ -90,10 +108,8 @@ class ChileFinetuneDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         # 0.0 es un último recurso documentado, no una corrección
         # silenciosa: la fracción afectada es ínfima (<0.1% de las
         # celdas en los eventos reales de docs/backtest-2026.md).
-        x = np.nan_to_num(event.values[day_index].astype("float32"), nan=0.0)
-        y = np.nan_to_num(
-            event.values[day_index + 1, _FIRE_MASK_CHANNEL_INDEX].astype("float32"), nan=0.0
-        )
+        x = np.nan_to_num(values[day_index], nan=0.0)
+        y = np.nan_to_num(values[day_index + 1, _FIRE_MASK_CHANNEL_INDEX], nan=0.0)
         return torch.from_numpy(x), torch.from_numpy(y)
 
 

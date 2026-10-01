@@ -485,3 +485,22 @@ def test_calibrated_unet_predict_rejects_non_finite_input():
     )
     with pytest.raises(ValueError, match="finita"):
         instance.predict(event)
+
+
+def test_calibrated_unet_prediction_is_monotone_non_decreasing_in_time(tmp_path):
+    # la probabilidad es ACUMULADA ("¿ha ardido alguna vez?"): nunca baja de un día a otro
+    from models.deep.calibration import CalibratedUNet
+
+    checkpoint = tmp_path / "model.pt"
+    _make_checkpoint_for_channel_order(checkpoint, seed=3)
+    size, n_days = 8, 5
+    data = np.random.default_rng(11).random(
+        (n_days, len(CHANNEL_ORDER), size, size)).astype("float32")
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={"day": [f"2026-01-0{d + 1}" for d in range(n_days)],
+                "channel": list(CHANNEL_ORDER)},
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 1},
+    )
+    result = CalibratedUNet(checkpoint).predict(event)
+    assert np.all(np.diff(result, axis=0) >= -1e-12)

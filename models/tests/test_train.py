@@ -104,7 +104,7 @@ def test_chile_finetune_dataset_maps_each_pair_to_the_exact_day_and_next_day_fir
         _make_sentinel_event(event_id=1, n_days=4),
         _make_sentinel_event(event_id=2, n_days=2),
     ]
-    dataset = ChileFinetuneDataset(events)
+    dataset = ChileFinetuneDataset(events, cumulative=False)  # mapeo crudo de valores
     assert len(dataset) == 4  # evento 1: 3 pares (d0-1,d1-2,d2-3); evento 2: 1 par (d0-1)
 
     fire_idx = CHANNEL_ORDER.index("fire_mask")
@@ -296,3 +296,27 @@ def test_load_chile_events_trims_leading_days_without_fire_like_the_evaluation(t
     (loaded,) = _load_chile_events(tmp_path, [7])
     assert loaded.sizes["day"] == 3
     assert str(loaded.coords["day"].values[0]) == "2026-01-04"
+
+
+def test_chile_finetune_dataset_default_uses_cumulative_burned_area_for_input_and_target():
+    # fuego ACTIVO que aparece, "desaparece" (hueco de pasada del satélite) y reaparece
+    data = np.zeros((4, len(CHANNEL_ORDER), 3, 3), dtype="float32")
+    fire = CHANNEL_ORDER.index("fire_mask")
+    data[0, fire, 0, 0] = 1.0
+    data[2, fire, 1, 1] = 1.0
+    event = xr.DataArray(
+        data, dims=("day", "channel", "y", "x"),
+        coords={"day": ["2026-01-0%d" % (d + 1) for d in range(4)],
+                "channel": list(CHANNEL_ORDER)},
+        name="fire_event_tensor", attrs={"resolution_m": 250.0, "event_id": 1},
+    )
+    dataset = ChileFinetuneDataset([event])
+    # par día 1 -> 2: el fuego activo del día 1 es todo ceros, pero el área
+    # quemada acumulada ya incluye la celda (0, 0) del día 0
+    x, y = dataset[1]
+    assert float(x[fire, 0, 0]) == 1.0 and float(y[0, 0]) == 1.0 and float(y[1, 1]) == 1.0
+    for i in range(len(dataset)):
+        xi, yi = dataset[i]
+        assert (yi >= xi[fire]).all()  # el objetivo nunca "pierde" fuego
+    raw = ChileFinetuneDataset([event], cumulative=False)
+    assert float(raw[1][0][fire, 0, 0]) == 0.0  # crudo: el fuego activo sí desaparece
