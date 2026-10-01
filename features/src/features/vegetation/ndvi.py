@@ -29,9 +29,9 @@ composites REALES que entrega openEO/CDSE ya vienen con el offset aplicado
 presente; medianas de RED 267-1012 y de NIR 2316-3159). Restar -1000 de nuevo
 duplicaba la corrección y daba NDVI de hasta ~10 (mediana ~1.8, con denominadores
 casi nulos o negativos) en TODOS los tensores de evento. El offset por defecto es
-ahora 0.0 (`boa_offset` sigue siendo un parámetro explícito por si algún día se usa una fuente con el offset
-sin aplicar), y `compute_and_save_vegetation` rechaza con un error cualquier NDVI
-fuera de [-1, 1] en vez de escribirlo en silencio.
+ahora 0.0 (`boa_offset` sigue siendo un parámetro explícito por si algún día se
+usa una fuente con el offset sin aplicar), y `compute_and_save_vegetation` rechaza
+con un error cualquier NDVI fuera de [-1, 1] en vez de escribirlo en silencio.
 
 Remuestreo: **bilineal** — NDVI es una magnitud continua, igual que la
 elevación del DEM o los campos de ERA5-Land (a diferencia de WorldCover,
