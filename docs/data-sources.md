@@ -228,13 +228,16 @@ post-reducción temporal, y eso es exactamente lo que fabrica clases
 inexistentes; ver `docs/decisions.md`). Cacheado por hash de `(bbox,
 año, mes)`. Descarga atómica (`.part` + `os.replace`).
 
-**Corrección radiométrica:** los DN de reflectancia se corrigen con el
-offset aditivo `BOA_ADD_OFFSET = -1000` del processing baseline 04.00+
-(vigente desde 2022-01-25, cubre toda la temporada 2025-26 de este
-proyecto) antes de calcular el cociente NDVI — la colección
-`SENTINEL2_L2A` de CDSE no publica esta metadata, así que es un
-supuesto explícito, no un valor leído del dato (ver
-`features/vegetation/ndvi.py`).
+**Corrección radiométrica:** los composites que entrega openEO/CDSE **ya
+vienen con el offset BOA aplicado** (verificado el 2026-10-01 contra los
+15 composites descargados: DN mínimos de 5-15 y valores negativos,
+imposibles si el offset +1000 estuviera presente). Una versión anterior de
+este proyecto restaba un offset de -1000 por segunda vez y escribía NDVI de
+hasta ~10 en todos los tensores (hallazgo C2 de `docs/review.md`); ahora el
+offset por defecto es 0.0 (`boa_offset` sigue siendo un parámetro), los
+píxeles oscuros (RED o NIR <= 0, o RED+NIR < 100 DN: agua, sombra) se marcan
+nodata, y `compute_ndvi_masked` rechaza con un error cualquier NDVI fuera de
+[-1, 1].
 
 **Reproyección y remuestreo:** NDVI reproyectado a `EPSG:32719` en la
 resolución de trabajo con remuestreo **bilineal** (magnitud continua,

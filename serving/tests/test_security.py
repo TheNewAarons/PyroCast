@@ -71,3 +71,10 @@ def test_every_typer_app_hides_locals_in_tracebacks():
 
     for app in (features_app, ingestion_app, models_app, calibrate_app, train_app):
         assert app.pretty_exceptions_show_locals is False
+
+
+def test_openapi_description_carries_the_research_notice():
+    from serving.api.main import create_app as build
+    from serving.api.schemas import RESEARCH_DISCLAIMER
+
+    assert RESEARCH_DISCLAIMER in build().description

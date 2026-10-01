@@ -9,6 +9,7 @@ import typer
 from shared.config import get_settings
 from shared.model_protocol import FireSpreadModel
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from models.cellular_automata.model import CellularAutomatonModel
 from models.cellular_automata.simulate import simulate_fire_spread
@@ -259,11 +260,21 @@ def backtest(
     (output_dir / output_name).write_text(json.dumps(payload, sort_keys=True, indent=2))
     typer.echo(f"Backtest: {len(result.per_event)} evento(s) -> {output_dir / output_name}")
 
-    engine = create_engine(settings.postgres_dsn)
-    persist_backtest_run(
-        engine=engine, per_event=result.per_event,
-        model_name=model, config=config, split="test",
-    )
+    # PostGIS es opcional para los resultados (el JSON ya se escribió arriba):
+    # si no está disponible, avisar claro en vez de terminar con un traceback.
+    try:
+        engine = create_engine(settings.postgres_dsn)
+        persist_backtest_run(
+            engine=engine, per_event=result.per_event,
+            model_name=model, config=config, split="test",
+        )
+    except SQLAlchemyError as exc:
+        typer.echo(
+            f"AVISO: no se pudo persistir en PostGIS ({type(exc).__name__}); los resultados "
+            f"quedaron en {output_dir / output_name}. `make up` levanta la base.",
+            err=True,
+        )
+        return
     typer.echo(f"Métricas persistidas en PostGIS ({len(result.per_event)} model_run).")
 
 

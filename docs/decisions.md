@@ -371,9 +371,10 @@ lista de abajo).
   cualquier lector downstream. Corregido: `nodata=FUEL_TYPE_UNKNOWN`.
 - Offset radiométrico BOA (`BOA_ADD_OFFSET=-1000`, processing baseline
   04.00+) no se aplicaba ni se documentaba — un error de NDVI de hasta
-  0.25 en una magnitud acotada a [-1,1]. Corregido: constante nombrada
-  aplicada explícitamente en `compute_ndvi_masked`, documentada en
-  `features/vegetation/ndvi.py` y `docs/data-sources.md`.
+  0.25 en una magnitud acotada a [-1,1]. "Corregido" entonces aplicando
+  -1000 explícitamente. **Esa corrección era un error** (los composites de
+  CDSE ya traen el offset aplicado): detectado en la revisión independiente
+  (`docs/review.md` C2); el offset por defecto es ahora 0.0.
 - `docs/limitations.md` no tenía ninguna entrada de Sentinel-2/
   WorldCover. Corregido: backfill de la limitación de escala/memoria y
   del supuesto urbano/no-combustible.

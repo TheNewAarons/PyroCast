@@ -228,3 +228,27 @@ def test_backtest_cli_unet_model_requires_a_checkpoint(monkeypatch):
     result = runner.invoke(app, ["backtest", "--model", "unet"])
     assert result.exit_code == 1
     assert "checkpoint" in result.output.lower()
+
+
+def test_backtest_survives_an_unavailable_database_and_says_so(tmp_path, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    monkeypatch.chdir(tmp_path)
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "models.cli.load_test_events", lambda dataset_dir: [_fixture_event(1), _fixture_event(2)]
+    )
+
+    def _down(**kwargs):
+        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    monkeypatch.setattr("models.cli.persist_backtest_run", _down)
+    result = runner.invoke(app, ["backtest", "--n-bootstrap", "10"])
+    get_settings.cache_clear()
+    assert result.exit_code == 0, result.output
+    assert "no se pudo persistir en PostGIS" in result.output
+    assert (tmp_path / "bench" / "results" / "baseline.json").exists()

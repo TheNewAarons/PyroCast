@@ -59,7 +59,7 @@ rellena con `NaN` **por campo, no todo-o-nada**: si de los 5 campos de
 clima de un día solo falta `precipitation`, los otros 4 (`wind_u`,
 `wind_v`, `temperature`, `relative_humidity`) se resamplean igual — antes
 de la revisión final del 2026-09-27, un solo campo faltante descartaba
-los 5 a NaN. NDVI usa el composite mensual más cercano dentro de un
+los 5 a NaN. NDVI (corregido: ver `docs/review.md` C2; en [-1, 1], píxeles oscuros enmascarados) usa el composite mensual más cercano dentro de un
 máximo de 3 meses de distancia (`max_month_distance` en
 `_nearest_month_path`) — más allá de eso, NaN en vez de presentar un
 composite de años de antigüedad como si fuera vigente. **Precondición
@@ -119,14 +119,18 @@ la misma solución).
   `geom` (rectángulo del bbox, SRID 4326).
 - Split: `data/processed/dataset/splits.json` — `{"train": [...ids],
   "val": [...ids], "test": [...ids]}`, `features/dataset/split.py`,
-  semilla fija (`seed=42` por defecto), 70/15/15, **por evento completo**
-  (nunca por píxel ni por día dentro de un evento — evita fuga de datos:
-  días consecutivos del mismo incendio son casi idénticos, entrenar con
-  un día y evaluar con el siguiente del MISMO evento mediría
-  memorización, no generalización). Con menos de 3 eventos, todo va a
-  `train` (documentado, no un `val`/`test` vacío por accidente); a partir
-  de 3, cada split recibe al menos 1 evento — el 70/15/15 es exacto solo
-  asintóticamente, no para conteos chicos.
+  semilla fija (`seed=42` por defecto), ~70/15/15, por **grupos de
+  eventos acoplados espacio-temporalmente** (`split_events_grouped`:
+  eventos a <= 10 km y <= 3 días entre extensiones de fuego van siempre
+  al mismo split), nunca por píxel ni por día dentro de un evento ni
+  por evento suelto — separar por evento suelto dejaba el mismo complejo
+  de incendios partido entre val y test (hallazgo C1 de `docs/review.md`).
+  `pyrocast-features resplit` rehace el split de un dataset ya construido
+  y `split_groups.json` guarda los grupos y las fugas del split anterior.
+  Con menos de 3 eventos, todo va a `train` con un aviso; con menos de 3
+  grupos independientes el comando falla (no hay forma de armar un split
+  sin fuga). El tamaño real de cada split se desvía del 70/15/15 porque un
+  grupo es indivisible.
 - **Reproducibilidad de `random.Random(seed).shuffle`**: garantizada
   dentro de una misma versión de Python (`requires-python
   ">=3.12,<3.13"` en la raíz del workspace) — Python no garantiza que el

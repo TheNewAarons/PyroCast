@@ -124,7 +124,7 @@ pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v6/best.p
 pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v6/best.pt --n-bootstrap 1000 --seed 42
 ```
 
-Para reproducir de punta a punta con las mismas credenciales: ingerir FIRMS/DEM/WorldCover/ERA5/Sentinel-2 para las fechas y bboxes de la sección 2, `pyrocast-features build-dataset --event-ids <ids>` por evento, `pyrocast-features resplit` (split por grupos), `pyrocast-train finetune --run-dir runs/finetune_2026_v6 --seed 42`, `pyrocast-calibrate run --checkpoint runs/finetune_2026_v3/best.pt --chile-val`, y los comandos de arriba.
+Para reproducir de punta a punta con las mismas credenciales: ingerir FIRMS/DEM/WorldCover/ERA5/Sentinel-2 para las fechas y bboxes de la sección 2, `pyrocast-features build-dataset --event-ids <ids>` por evento, `pyrocast-features resplit` (split por grupos), `pyrocast-train finetune --run-dir runs/finetune_2026_v6 --seed 42`, `pyrocast-calibrate run --checkpoint runs/finetune_2026_v6/best.pt --chile-val`, y los comandos de arriba. (Los tensores de `data/processed/dataset/` de esta corrida se construyeron con el NDVI incorrecto y se repararon con `scripts/migrate_ndvi_offset.py`; un `build-dataset` nuevo ya sale bien. Auditoría de esa migración en `bench/results/ndvi_fix_audit.json`.)
 
 ## 10. Resultados anteriores con el split con fuga (REEMPLAZADOS)
 
