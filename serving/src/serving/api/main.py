@@ -37,8 +37,8 @@ WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    # origen (no la ruta) hacia otros sitios: los tiles de OpenStreetMap
-    # exigen un Referer según su política de uso.
+    # origen (no la ruta) hacia otros sitios: los proveedores de teselas
+    # (Esri, OpenStreetMap) esperan un Referer según sus políticas de uso.
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
 }

@@ -21,13 +21,18 @@ columna "Verificado" dice qué se confirmó ese día y qué no.
 | **ESA WorldCover 10 m 2021 v200** | CC BY 4.0 | "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium". Citar: Zanaga, D. et al. (2022). *ESA WorldCover 10 m 2021 v200*. doi:10.5281/zenodo.7254221; y "ESA WorldCover was accessed on `FECHA` from https://registry.opendata.aws/esa-worldcover-vito" | [Registro AWS Open Data](https://registry.opendata.aws/esa-worldcover-vito/) y [esa-worldcover.org/data-access](https://esa-worldcover.org/en/data-access) | Licencia, DOI y textos de atribución confirmados |
 | **Next Day Wildfire Spread (NDWS)** — dataset público de preentrenamiento, vía Kaggle | CC BY 4.0 | Citar: Huot, F., Hu, R. L., Goyal, N., Sankar, T., Ihme, M., Chen, Y.-F. (2022). "Next Day Wildfire Spread: A Machine Learning Dataset to Predict Wildfire Spreading From Remote-Sensing Data". *IEEE Transactions on Geoscience and Remote Sensing* 60, 1-13 | [Kaggle: Next Day Wildfire Spread](https://www.kaggle.com/datasets/fantineh/next-day-wildfire-spread); detalle en `docs/public-dataset.md` | Licencia y cita confirmadas en fuentes secundarias (la página de Kaggle exige navegador autenticado y no se pudo leer directamente). **El U-Net evaluado en `docs/results.md` NO usó este dataset** (se entrenó desde cero con eventos de Chile); el código de preentrenamiento existe pero nunca se corrió con datos reales |
 
-**Otras atribuciones de la interfaz web** (`serving/web/`): las teselas
-del mapa son de OpenStreetMap — "© OpenStreetMap contributors" (ODbL;
-[copyright](https://www.openstreetmap.org/copyright)), ya incluido en la
-atribución del mapa; el servidor público de teselas de OSM tiene una
-[política de uso](https://operations.osmfoundation.org/policies/tiles/)
-(adecuada para uso de investigación local, no para tráfico masivo).
-Leaflet se carga desde unpkg con SRI (licencia BSD-2-Clause).
+**Otras atribuciones de la interfaz web** (`serving/web/`): la capa base es
+**Esri World Dark Gray Base** (`services.arcgisonline.com`, sin clave),
+con la atribución que declara el servicio: "Esri, HERE, Garmin, ©
+OpenStreetMap contributors, and the GIS user community" (visible en el
+mapa). Se probó que responde sin clave el 2026-10-01; **los términos de uso
+de Esri para tráfico más allá de uso de investigación local no se
+verificaron**. Se descartó CARTO Dark Matter porque desde 2026 exige una
+clave de API (sin ella devuelve teselas con marca de agua "API KEY
+REQUIRED"). Los datos de OpenStreetMap son ODbL
+([copyright](https://www.openstreetmap.org/copyright)). Leaflet y las
+fuentes (Jost y Martian Mono, SIL Open Font License, vía Google Fonts) se
+cargan desde CDN; Leaflet es BSD-2-Clause.
 
 **Derivados que produce este proyecto** (`docs/results.md`, mapas de la
 interfaz, tensores Zarr) mezclan varias de estas fuentes: mantener todas

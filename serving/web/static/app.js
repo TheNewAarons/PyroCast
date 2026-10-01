@@ -13,17 +13,23 @@
     defaultHorizon: Number(root.dataset.defaultHorizon),
   };
 
-  // Única fuente de la escala de color: la leyenda y las celdas la comparten.
-  // Rampa secuencial amarillo -> rojo oscuro. Por debajo de MIN_PROB la celda
-  // no se pinta (así el mapa base sigue visible).
+  // La escala de color vive en app.css (:root, --ramp-1..5): una sola fuente para
+  // las celdas del mapa y la leyenda. Por debajo de MIN_PROB la celda no se pinta.
+  var css = getComputedStyle(document.documentElement);
+  function token(name, fallback) {
+    return (css.getPropertyValue(name) || "").trim() || fallback;
+  }
   var MIN_PROB = 0.05;
   var BINS = [
-    { min: 0.8, color: "#bd0026", label: "80 – 100 %" },
-    { min: 0.6, color: "#f03b20", label: "60 – 80 %" },
-    { min: 0.4, color: "#fd8d3c", label: "40 – 60 %" },
-    { min: 0.2, color: "#fecc5c", label: "20 – 40 %" },
-    { min: MIN_PROB, color: "#ffffb2", label: "5 – 20 %" },
+    { min: 0.8, color: token("--ramp-5", "#ffd9a8"), label: "80 a 100 %" },
+    { min: 0.6, color: token("--ramp-4", "#ffa245"), label: "60 a 80 %" },
+    { min: 0.4, color: token("--ramp-3", "#f4801f"), label: "40 a 60 %" },
+    { min: 0.2, color: token("--ramp-2", "#d9691a"), label: "20 a 40 %" },
+    { min: MIN_PROB, color: token("--ramp-1", "#b45410"), label: "5 a 20 %" },
   ];
+  var ACCENT = token("--accent", "#ff8a1f");
+  var INK = token("--text-strong", "#f2f5f9");
+  var LINE = token("--line-ui", "#6d7f95");
 
   var state = {
     point: null,        // {lat, lon}
@@ -52,15 +58,42 @@
 
   // ---------- mapa ----------
   var west = cfg.bbox[0], south = cfg.bbox[1], east = cfg.bbox[2], north = cfg.bbox[3];
-  var map = L.map("map", { maxBounds: [[south - 2, west - 2], [north + 2, east + 2]] });
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 17,
-    attribution: "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>",
-  }).addTo(map);
+  var map = L.map("map", {
+    maxBounds: [[south - 2, west - 2], [north + 2, east + 2]], zoomControl: false,
+  });
+  L.control.zoom({ position: "topright" }).addTo(map);
+  // Base oscura y desaturada de Esri (sin clave); atribución exigida por el proveedor.
+  L.tileLayer(
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    {
+      maxNativeZoom: 16, maxZoom: 17,
+      attribution: "Tiles © Esri, HERE, Garmin, © OpenStreetMap contributors, " +
+        "and the GIS user community",
+    }
+  ).addTo(map);
   var studyArea = L.rectangle([[south, west], [north, east]], {
-    color: "#1f5f8b", weight: 1, fill: false, dashArray: "6 4", interactive: false,
+    color: LINE, weight: 1, fill: false, dashArray: "4 6", interactive: false,
   }).addTo(map);
   map.fitBounds(studyArea.getBounds());
+
+  // lectura de coordenadas bajo el cursor (consola)
+  var cursor = document.getElementById("cursor-readout");
+  map.on("mousemove", function (ev) {
+    cursor.textContent = "LAT " + ev.latlng.lat.toFixed(4) + "  LON " + ev.latlng.lng.toFixed(4);
+  });
+  map.on("mouseout", function () { cursor.textContent = "LAT --  LON --"; });
+
+  // panel colapsable (útil sobre todo en móvil)
+  var hud = document.getElementById("hud");
+  var hudToggle = document.getElementById("hud-toggle");
+  function setHudCollapsed(collapsed) {
+    hud.dataset.collapsed = collapsed ? "true" : "false";
+    hudToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+  hudToggle.addEventListener("click", function () {
+    setHudCollapsed(hud.dataset.collapsed !== "true");
+  });
+  setHudCollapsed(false);
 
   // ---------- leyenda ----------
   BINS.forEach(function (bin) {
@@ -76,7 +109,7 @@
   var noneSwatch = document.createElement("span");
   noneSwatch.className = "swatch";
   none.appendChild(noneSwatch);
-  none.appendChild(document.createTextNode("< 5 % (sin color)"));
+  none.appendChild(document.createTextNode("menos de 5 %, sin color"));
   el.legend.appendChild(none);
 
   // ---------- errores ----------
@@ -138,7 +171,7 @@
       state.firesLayer = L.geoJSON(data, {
         pointToLayer: function (feature, latlng) {
           return L.circleMarker(latlng, {
-            radius: 5, color: "#e03131", weight: 2, fillColor: "#111", fillOpacity: 0.9,
+            radius: 5, color: ACCENT, weight: 2, fillColor: "#000", fillOpacity: 0.6,
           });
         },
         onEachFeature: function (feature, layer) {
@@ -158,7 +191,7 @@
     state.point = { lat: Number(ev.latlng.lat.toFixed(5)), lon: Number(ev.latlng.lng.toFixed(5)) };
     if (state.pointMarker) { state.pointMarker.remove(); }
     state.pointMarker = L.circleMarker(ev.latlng, {
-      radius: 8, color: "#fff", weight: 2, fillColor: "#1f5f8b", fillOpacity: 1,
+      radius: 7, color: INK, weight: 1.5, fillColor: INK, fillOpacity: 0.25,
     }).addTo(map);
     el.pointText.textContent = "Latitud " + state.point.lat + ", longitud " + state.point.lon;
     el.button.disabled = false;
@@ -169,16 +202,16 @@
     var p = feature.properties.probability_by_day[state.dayIndex];
     for (var i = 0; i < BINS.length; i++) {
       if (p >= BINS[i].min) {
-        return { stroke: false, fillColor: BINS[i].color, fillOpacity: 0.65 };
+        return { stroke: false, fillColor: BINS[i].color, fillOpacity: 0.72, className: "pc-cell" };
       }
     }
-    return { stroke: false, fillOpacity: 0 };
+    return { stroke: false, fillOpacity: 0, className: "pc-cell" };
   }
 
   function showDay(index) {
     state.dayIndex = index;
     var d = state.result.days[index];
-    el.dayLabel.textContent = "Día " + d.day + " — " + d.date;
+    el.dayLabel.textContent = d.day + "/" + state.result.days.length + "  " + d.date;
     if (state.predictionLayer) { state.predictionLayer.setStyle(cellStyle); }
   }
 

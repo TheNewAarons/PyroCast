@@ -225,7 +225,7 @@ citas y qué se verificó) está en
 | Sentinel-2 L2A (CDSE) | Datos Sentinel de Copernicus (libre, completo y abierto) | "Contains modified Copernicus Sentinel data [año]" |
 | ESA WorldCover 10 m 2021 v200 | CC BY 4.0 | "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium" · Zanaga et al. (2022), [doi:10.5281/zenodo.7254221](https://doi.org/10.5281/zenodo.7254221) |
 | Next Day Wildfire Spread (NDWS, opcional) | CC BY 4.0 | Huot et al. (2022), *IEEE TGRS* 60 — no usado en los resultados publicados |
-| Teselas del mapa (interfaz web) | ODbL | © OpenStreetMap contributors |
+| Teselas del mapa (interfaz web): Esri World Dark Gray Base | Términos de uso de Esri (sin clave; no verificados a fondo) y ODbL para los datos de OpenStreetMap | "Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community" |
 
 Paper de referencia de diseño: WildfireCube (ver
 [`CLAUDE.md`](CLAUDE.md) y [`docs/decisions.md`](docs/decisions.md)). Licencia del código de este
