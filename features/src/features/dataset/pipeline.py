@@ -53,15 +53,21 @@ class EventSources:
 
 
 def padded_days_for_event(
-    event: FireEvent, pre_event_padding_days: int = DEFAULT_PRE_EVENT_PADDING_DAYS
+    event: FireEvent,
+    pre_event_padding_days: int = DEFAULT_PRE_EVENT_PADDING_DAYS,
+    post_event_days: int = 0,
 ) -> list[dt.date]:
     """Único lugar que calcula la ventana [start_date - padding,
     end_date] de un evento -- antes de este fix, `features/cli.py`
     recalculaba esta misma ventana con un `5` hardcodeado por su cuenta,
     pudiendo desincronizarse de `DEFAULT_PRE_EVENT_PADDING_DAYS` si uno
-    de los dos cambiara sin el otro."""
+    de los dos cambiara sin el otro.
+
+    `post_event_days` extiende la ventana DESPUÉS de la última detección
+    (días sin detecciones reales) -- lo usa `serving/` para pedir el
+    horizonte de pronóstico de una ignición puntual."""
     padded_start = event.start_date - dt.timedelta(days=pre_event_padding_days)
-    total_days = (event.end_date - padded_start).days + 1
+    total_days = (event.end_date - padded_start).days + 1 + post_event_days
     return [padded_start + dt.timedelta(days=i) for i in range(total_days)]
 
 
@@ -163,8 +169,9 @@ def build_dataset_for_event(
     pre_event_padding_days: int = DEFAULT_PRE_EVENT_PADDING_DAYS,
     context_buffer_m: float = DEFAULT_CONTEXT_BUFFER_M,
     fire_buffer_m: float = DEFAULT_BUFFER_M,
+    post_event_days: int = 0,
 ) -> tuple[xr.DataArray, tuple[float, float, float, float]]:
-    days = tuple(padded_days_for_event(event, pre_event_padding_days))
+    days = tuple(padded_days_for_event(event, pre_event_padding_days, post_event_days))
 
     event_bbox = _event_bbox_wgs84(event.detections, crs, buffer_m=context_buffer_m)
     grid = build_grid(event_bbox, crs, resolution_m)

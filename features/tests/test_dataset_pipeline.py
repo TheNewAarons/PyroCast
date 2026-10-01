@@ -305,3 +305,14 @@ def test_build_dataset_for_event_fills_partial_weather_nan_with_the_source_mean(
     # con un valor fabricado distinto.
     assert np.allclose(wind_u_values, 5.0)
     assert tensor.shape[-1] >= 15
+
+
+def test_padded_days_for_event_extends_after_last_detection_when_requested():
+    # serving/ pide días POSTERIORES a la ignición (el horizonte de
+    # pronóstico) -- no hay detecciones reales en esos días.
+    at = dt.datetime(2026, 1, 15, 12, 0, tzinfo=dt.UTC)
+    event = FireEvent(event_id=0, detections=(_det(-38.0, -72.5, at),))
+    days = padded_days_for_event(event, pre_event_padding_days=0, post_event_days=3)
+    assert days == [dt.date(2026, 1, 15) + dt.timedelta(days=i) for i in range(4)]
+    # sin el argumento, el comportamiento previo no cambia
+    assert padded_days_for_event(event, pre_event_padding_days=0) == [dt.date(2026, 1, 15)]

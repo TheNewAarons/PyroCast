@@ -22,8 +22,8 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
-      - name: Typecheck (mypy --strict: shared + features)
-        run: uv run mypy --strict shared/src features/src
+      - name: Typecheck (mypy --strict: shared + features + serving)
+        run: uv run mypy --strict shared/src features/src serving/src
 
       - name: Test (all workspace members)
         run: |

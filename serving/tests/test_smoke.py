@@ -40,3 +40,10 @@ def test_app_startup_fails_clearly_when_config_is_missing(monkeypatch, tmp_path)
                 pass
     finally:
         get_settings.cache_clear()
+
+
+def test_healthz_does_not_need_model_or_data(settings, model_loader):
+    from serving.api.main import create_app
+
+    with TestClient(create_app(settings=settings, model_loader=model_loader)) as client:
+        assert client.get("/healthz").json() == {"status": "ok"}

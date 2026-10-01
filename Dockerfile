@@ -6,11 +6,19 @@ RUN pip install --no-cache-dir uv
 WORKDIR /build
 COPY pyproject.toml uv.lock ./
 COPY shared/pyproject.toml shared/pyproject.toml
+COPY features/pyproject.toml features/pyproject.toml
+COPY models/pyproject.toml models/pyproject.toml
+COPY ingestion/pyproject.toml ingestion/pyproject.toml
 COPY serving/pyproject.toml serving/pyproject.toml
 COPY shared/src shared/src
+COPY features/src features/src
+COPY models/src models/src
+COPY ingestion/src ingestion/src
 COPY serving/src serving/src
 
-RUN uv sync --frozen --package shared --package serving --no-dev
+# serving depende (workspace) de features, models e ingestion -- ver
+# docs/decisions.md. Esto trae torch (vía models) a la imagen: pesada.
+RUN uv sync --frozen --package serving --no-dev
 
 FROM python:3.12-slim AS runtime
 
@@ -21,6 +29,9 @@ WORKDIR /app
 COPY --from=builder /build/.venv /app/.venv
 COPY serving/src /app/serving/src
 COPY shared/src /app/shared/src
+COPY features/src /app/features/src
+COPY models/src /app/models/src
+COPY ingestion/src /app/ingestion/src
 
 # /data es el punto de montaje esperado por docker-compose.yml
 # (./data:/data + DATA_RAW_DIR=/data/raw, etc.). Se crea y se cede a
@@ -30,7 +41,7 @@ COPY shared/src /app/shared/src
 RUN mkdir -p /data && chown -R pyrocast:pyrocast /app /data
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/shared/src:/app/serving/src"
+    PYTHONPATH="/app/shared/src:/app/features/src:/app/models/src:/app/ingestion/src:/app/serving/src"
 
 USER pyrocast
 

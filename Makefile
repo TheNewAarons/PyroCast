@@ -70,4 +70,4 @@ lint:
 	uv run ruff check .
 
 typecheck:
-	uv run mypy --strict shared/src features/src
+	uv run mypy --strict shared/src features/src serving/src

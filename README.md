@@ -16,7 +16,7 @@ completas; `docs/decisions.md` para decisiones de diseño y
 ```bash
 cp .env.example .env   # completar credenciales, ver comentarios en el archivo
 uv sync --all-packages --group dev
-make up                # levanta postgis + api (solo /healthz por ahora;
+make up                # levanta postgis + api (/predict, /active-fires, /healthz: ver docs/api.md;
                         # ver docs/limitations.md si no tienes Docker a mano)
 make test               # corre los tests de los 5 paquetes del workspace
 make lint

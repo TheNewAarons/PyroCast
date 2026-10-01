@@ -1789,7 +1789,10 @@ version = "0.1.0"
 source = { editable = "serving" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "features" },
+    { name = "ingestion" },
     { name = "jinja2" },
+    { name = "models" },
     { name = "shared" },
     { name = "typer" },
 ]
@@ -1797,7 +1800,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.114" },
+    { name = "features", editable = "features" },
+    { name = "ingestion", editable = "ingestion" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "models", editable = "models" },
     { name = "shared", editable = "shared" },
     { name = "typer", specifier = ">=0.12" },
 ]
