@@ -8,10 +8,10 @@
 
 Backtest sobre el split de test de incendios reales de Chile 2025-2026 (n = 2 eventos de test). Modelos con resultados: Autómata celular (sin calibrar), U-Net (calibrado), Ensamble: blend, Ensamble: stacking.
 
-- IoU ↑: mejor Ensamble: stacking (0.513 [0.462, 0.564]); intervalo sin solape con los demás modelos.
-- Dice ↑: mejor Ensamble: stacking (0.677 [0.632, 0.722]); intervalo sin solape con los demás modelos.
-- Brier ↓: mejor Ensamble: stacking (0.058 [0.056, 0.061]); intervalo solapado con U-Net (calibrado), Ensamble: blend: **diferencia no distinguible** con este n.
-- ECE ↓: mejor Ensamble: stacking (0.038 [0.020, 0.055]); intervalo solapado con U-Net (calibrado): **diferencia no distinguible** con este n.
+- IoU ↑: mejor Ensamble: stacking (0.486 [0.482, 0.491]); intervalo solapado con Autómata celular (sin calibrar): **diferencia no distinguible** con este n.
+- Dice ↑: mejor Ensamble: stacking (0.655 [0.651, 0.658]); intervalo solapado con Autómata celular (sin calibrar): **diferencia no distinguible** con este n.
+- Brier ↓: mejor Ensamble: stacking (0.061 [0.051, 0.072]); intervalo solapado con Ensamble: blend: **diferencia no distinguible** con este n.
+- ECE ↓: mejor Ensamble: stacking (0.048 [0.033, 0.062]); intervalo solapado con Ensamble: blend: **diferencia no distinguible** con este n.
 
 Con tan pocos eventos de test los intervalos bootstrap (remuestreo de valores por evento) son anchos o, con n pequeño, engañosamente angostos: **esto no es una comparación estadísticamente robusta**. Ver las secciones 2 y 5.
 
@@ -21,10 +21,10 @@ Con tan pocos eventos de test los intervalos bootstrap (remuestreo de valores po
 
 | Métrica (media [IC 95 % bootstrap]) | Autómata celular (sin calibrar) | U-Net (calibrado) | Ensamble: blend | Ensamble: stacking |
 |---|---|---|---|---|
-| IoU ↑ | 0.319 [0.288, 0.351] | 0.249 [0.055, 0.442] | 0.334 [0.284, 0.384] | 0.513 [0.462, 0.564] |
-| Dice ↑ | 0.483 [0.447, 0.520] | 0.359 [0.104, 0.613] | 0.499 [0.442, 0.555] | 0.677 [0.632, 0.722] |
-| Brier ↓ | 0.092 [0.082, 0.103] | 0.070 [0.044, 0.096] | 0.075 [0.058, 0.092] | 0.058 [0.056, 0.061] |
-| ECE ↓ | 0.091 [0.082, 0.100] | 0.064 [0.035, 0.094] | 0.074 [0.058, 0.090] | 0.038 [0.020, 0.055] |
+| IoU ↑ | 0.398 [0.288, 0.508] | 0.033 [0.011, 0.055] | 0.033 [0.011, 0.055] | 0.486 [0.482, 0.491] |
+| Dice ↑ | 0.560 [0.447, 0.674] | 0.063 [0.022, 0.104] | 0.063 [0.022, 0.104] | 0.655 [0.651, 0.658] |
+| Brier ↓ | 0.089 [0.076, 0.103] | 0.095 [0.075, 0.114] | 0.081 [0.056, 0.106] | 0.061 [0.051, 0.072] |
+| ECE ↓ | 0.086 [0.071, 0.100] | 0.093 [0.075, 0.111] | 0.078 [0.050, 0.106] | 0.048 [0.033, 0.062] |
 
 ### 2.2 Test interno (P8)
 
@@ -34,14 +34,14 @@ El 'split de test interno' del dataset de eventos de Chile **es** el conjunto ev
 
 | event_id | modelo | IoU ↑ | Dice ↑ | Brier ↓ | ECE ↓ |
 |---|---|---|---|---|---|
-| 203187374 | Autómata celular (sin calibrar) | 0.351 | 0.520 | 0.082 | 0.082 |
-| 203187374 | U-Net (calibrado) | 0.442 | 0.613 | 0.044 | 0.035 |
-| 203187374 | Ensamble: blend | 0.384 | 0.555 | 0.058 | 0.058 |
-| 203187374 | Ensamble: stacking | 0.462 | 0.632 | 0.061 | 0.055 |
+| 1013976330 | Autómata celular (sin calibrar) | 0.508 | 0.674 | 0.076 | 0.071 |
+| 1013976330 | U-Net (calibrado) | 0.011 | 0.022 | 0.075 | 0.075 |
+| 1013976330 | Ensamble: blend | 0.011 | 0.022 | 0.056 | 0.050 |
+| 1013976330 | Ensamble: stacking | 0.491 | 0.658 | 0.051 | 0.062 |
 | 2582836092 | Autómata celular (sin calibrar) | 0.288 | 0.447 | 0.103 | 0.100 |
-| 2582836092 | U-Net (calibrado) | 0.055 | 0.104 | 0.096 | 0.094 |
-| 2582836092 | Ensamble: blend | 0.284 | 0.442 | 0.092 | 0.090 |
-| 2582836092 | Ensamble: stacking | 0.564 | 0.722 | 0.056 | 0.020 |
+| 2582836092 | U-Net (calibrado) | 0.055 | 0.104 | 0.114 | 0.111 |
+| 2582836092 | Ensamble: blend | 0.055 | 0.104 | 0.106 | 0.106 |
+| 2582836092 | Ensamble: stacking | 0.482 | 0.651 | 0.072 | 0.033 |
 
 ![IoU por evento de test y modelo (datos de bench/results/).](figures/per_event_iou.png)
 
@@ -53,8 +53,8 @@ El 'split de test interno' del dataset de eventos de Chile **es** el conjunto ev
 
 | conjunto | n celdas | Brier antes | Brier después | ECE antes | ECE después |
 |---|---|---|---|---|---|
-| val (conjunto de AJUSTE del calibrador) | 13008 | 0.0795 | 0.0667 | 0.1200 | 0.0421 |
-| test (fuera de muestra) | 10785 | 0.0758 | 0.0619 | 0.1394 | 0.0350 |
+| val (conjunto de AJUSTE del calibrador) | 83826 | 0.0915 | 0.0568 | 0.1700 | 0.0281 |
+| test (fuera de muestra) | 11400 | 0.0726 | 0.0614 | 0.1323 | 0.0477 |
 
 Pares (entrada del día d, máscara del día d+1) de un solo paso, el mismo contrato con que se entrenó y calibró. **El ECE 'después' sobre val es estructuralmente ~0** (el calibrador se ajusta sobre esos mismos datos, `docs/calibration.md`): solo la fila de test mide calibración fuera de muestra.
 
@@ -70,20 +70,20 @@ Pares (entrada del día d, máscara del día d+1) de un solo paso, el mismo cont
 
 | modelo | Brier | ECE |
 |---|---|---|
-| Autómata celular (sin calibrar) | 0.0951 | 0.0933 |
-| U-Net (calibrado) | 0.0771 | 0.0725 |
-| Ensamble: blend | 0.0792 | 0.0673 |
-| Ensamble: stacking | 0.0577 | 0.0317 |
+| Autómata celular (sin calibrar) | 0.0925 | 0.0891 |
+| U-Net (calibrado) | 0.0992 | 0.0975 |
+| Ensamble: blend | 0.0867 | 0.0840 |
+| Ensamble: stacking | 0.0641 | 0.0422 |
 
 ## 4. Predicciones contra el incendio real
 
 **Criterio de selección: ninguno que favorezca al modelo.** Se muestran *todos* los eventos retenidos (no vistos al entrenar los pesos): los de **test** (evidencia fuera de muestra) y los de **val** (con rótulo: val se usó para calibrar el U-Net y elegir el peso/coeficientes del ensamble, así que NO es evidencia fuera de muestra). Cada caso se rotula 'bueno' o 'malo' según el IoU del U-Net, calculado de los datos. Cada panel muestra el último día del horizonte; el contorno negro es el área realmente quemada acumulada.
 
-### Evento 203187374 (test) — caso bueno para U-Net (calibrado) (IoU 0.442)
+### Evento 1013976330 (test) — caso malo para U-Net (calibrado) (IoU 0.011)
 
-![Evento 203187374 (test): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_test_203187374.png)
+![Evento 1013976330 (test): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_test_1013976330.png)
 
-*Evento 203187374 (test): verdad acumulada y probabilidad predicha por modelo, último día.*
+*Evento 1013976330 (test): verdad acumulada y probabilidad predicha por modelo, último día.*
 
 ### Evento 2582836092 (test) — caso malo para U-Net (calibrado) (IoU 0.055)
 
@@ -91,81 +91,114 @@ Pares (entrada del día d, máscara del día d+1) de un solo paso, el mismo cont
 
 *Evento 2582836092 (test): verdad acumulada y probabilidad predicha por modelo, último día.*
 
-### Evento 12676775 (val) — caso malo para U-Net (calibrado) (IoU 0.007)
+### Evento 1277049523 (val) — caso malo para U-Net (calibrado) (IoU 0.000)
 
-![Evento 12676775 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_12676775.png)
+![Evento 1277049523 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_1277049523.png)
 
-*Evento 12676775 (val): verdad acumulada y probabilidad predicha por modelo, último día.*
+*Evento 1277049523 (val): verdad acumulada y probabilidad predicha por modelo, último día.*
 
-### Evento 2728181583 (val) — caso malo para U-Net (calibrado) (IoU 0.151)
+### Evento 2970931921 (val) — caso malo para U-Net (calibrado) (IoU 0.041)
 
-![Evento 2728181583 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_2728181583.png)
+![Evento 2970931921 (val): verdad acumulada y probabilidad predicha por modelo, último día.](figures/map_val_2970931921.png)
 
-*Evento 2728181583 (val): verdad acumulada y probabilidad predicha por modelo, último día.*
+*Evento 2970931921 (val): verdad acumulada y probabilidad predicha por modelo, último día.*
 
 ## 5. Dónde falla el modelo
 
 Se analizan todos los pares modelo-evento retenidos con **IoU < 0.30** (umbral fijo de este reporte, no ajustado a los resultados), agrupados por evento. Se comparan descriptores del evento contra los 11 eventos de entrenamiento. **Las hipótesis NO están verificadas**: con tan pocos eventos no se puede aislar una causa.
 
+### Evento 1013976330 (test)
+
+- U-Net (calibrado): IoU 0.011, Dice 0.022, Brier 0.075; celdas con prob ≥ 0,5 en el último día: 0 frente a 86 realmente quemadas (razón 0.00) — **subpredice**.
+- Ensamble: blend: IoU 0.011, Dice 0.022, Brier 0.056; celdas con prob ≥ 0,5 en el último día: 0 frente a 86 realmente quemadas (razón 0.00) — **subpredice**.
+
+Descriptores del evento frente a los eventos de entrenamiento:
+
+- celdas realmente quemadas (último día): 86; entrenamiento 62–820; percentil 9 (bajo frente al entrenamiento)
+- variabilidad de la dirección diaria del viento (desv. circular, °): 61.73; entrenamiento 1.64–84.71; percentil 91 (alto frente al entrenamiento)
+- velocidad media del viento (m/s): 1.52; entrenamiento 1.87–5.43; percentil 0 **fuera del rango de entrenamiento**
+- desv. estándar de la elevación (m): 232.31; entrenamiento 8.78–90.82; percentil 100 **fuera del rango de entrenamiento**
+- pendiente media (°): 16.11; entrenamiento 0.55–4.34; percentil 100 **fuera del rango de entrenamiento**
+- fracción de celdas no combustibles: 0.21; entrenamiento 0.00–0.08; percentil 100 **fuera del rango de entrenamiento**
+
+**Hipótesis respaldadas por los descriptores** (no verificadas):
+
+- combustible: gran parte de la zona es no combustible según WorldCover y la clasificación de combustible es un proxy grueso (fracción de celdas no combustibles: 0.21).
+- evento más chico que la mayoría de los de entrenamiento (fuera de la distribución por tamaño): el modelo vio pocos casos así (celdas realmente quemadas (último día): 86).
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (desv. estándar de la elevación (m): 232.31).
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (pendiente media (°): 16.11).
+- viento cambiante no capturado por agregados diarios: la dirección varía y el modelo recibe un único vector medio por día (variabilidad de la dirección diaria del viento (desv. circular, °): 61.73).
+- viento más intenso que en la mayoría de los eventos de entrenamiento: régimen poco representado (velocidad media del viento (m/s): 1.52).
+
+Para el U-Net, la subpredicción sistemática es coherente con un modelo entrenado desde cero con muy pocos eventos (sin preentrenamiento), que no aprendió a propagar el fuego: hipótesis, sin experimento que la aísle.
+
 ### Evento 2582836092 (test)
 
 - Autómata celular (sin calibrar): IoU 0.288, Dice 0.447, Brier 0.103; celdas con prob ≥ 0,5 en el último día: 147 frente a 460 realmente quemadas (razón 0.32) — **subpredice**.
-- U-Net (calibrado): IoU 0.055, Dice 0.104, Brier 0.096; celdas con prob ≥ 0,5 en el último día: 0 frente a 460 realmente quemadas (razón 0.00) — **subpredice**.
-- Ensamble: blend: IoU 0.284, Dice 0.442, Brier 0.092; celdas con prob ≥ 0,5 en el último día: 132 frente a 460 realmente quemadas (razón 0.29) — **subpredice**.
+- U-Net (calibrado): IoU 0.055, Dice 0.104, Brier 0.114; celdas con prob ≥ 0,5 en el último día: 0 frente a 460 realmente quemadas (razón 0.00) — **subpredice**.
+- Ensamble: blend: IoU 0.055, Dice 0.104, Brier 0.106; celdas con prob ≥ 0,5 en el último día: 0 frente a 460 realmente quemadas (razón 0.00) — **subpredice**.
 
 Descriptores del evento frente a los eventos de entrenamiento:
 
-- celdas realmente quemadas (último día): 460; entrenamiento 62–4080; percentil 73
+- celdas realmente quemadas (último día): 460; entrenamiento 62–820; percentil 82 (alto frente al entrenamiento)
 - variabilidad de la dirección diaria del viento (desv. circular, °): 7.82; entrenamiento 1.64–84.71; percentil 18 (bajo frente al entrenamiento)
-- velocidad media del viento (m/s): 3.51; entrenamiento 1.17–5.43; percentil 82 (alto frente al entrenamiento)
-- desv. estándar de la elevación (m): 72.23; entrenamiento 8.78–267.96; percentil 64
-- pendiente media (°): 5.24; entrenamiento 0.55–17.55; percentil 82 (alto frente al entrenamiento)
-- fracción de celdas no combustibles: 0.00; entrenamiento 0.00–0.21; percentil 9 (bajo frente al entrenamiento)
+- velocidad media del viento (m/s): 3.51; entrenamiento 1.87–5.43; percentil 55
+- desv. estándar de la elevación (m): 72.23; entrenamiento 8.78–90.82; percentil 82 (alto frente al entrenamiento)
+- pendiente media (°): 5.24; entrenamiento 0.55–4.34; percentil 100 **fuera del rango de entrenamiento**
+- fracción de celdas no combustibles: 0.00; entrenamiento 0.00–0.08; percentil 9 (bajo frente al entrenamiento)
 
 **Hipótesis respaldadas por los descriptores** (no verificadas):
 
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (desv. estándar de la elevación (m): 72.23).
 - terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (pendiente media (°): 5.24).
-- viento más intenso que en la mayoría de los eventos de entrenamiento: régimen poco representado (velocidad media del viento (m/s): 3.51).
 
 Para el U-Net, la subpredicción sistemática es coherente con un modelo entrenado desde cero con muy pocos eventos (sin preentrenamiento), que no aprendió a propagar el fuego: hipótesis, sin experimento que la aísle.
 
-### Evento 12676775 (val) — val: no es evidencia fuera de muestra
+### Evento 1277049523 (val) — val: no es evidencia fuera de muestra
 
-- Autómata celular (sin calibrar): IoU 0.084, Dice 0.156, Brier 0.145; celdas con prob ≥ 0,5 en el último día: 62 frente a 446 realmente quemadas (razón 0.14) — **subpredice**.
-- U-Net (calibrado): IoU 0.007, Dice 0.013, Brier 0.111; celdas con prob ≥ 0,5 en el último día: 0 frente a 446 realmente quemadas (razón 0.00) — **subpredice**.
-- Ensamble: blend: IoU 0.073, Dice 0.136, Brier 0.127; celdas con prob ≥ 0,5 en el último día: 51 frente a 446 realmente quemadas (razón 0.11) — **subpredice**.
+- Autómata celular (sin calibrar): IoU 0.012, Dice 0.024, Brier 0.258; celdas con prob ≥ 0,5 en el último día: 78 frente a 4080 realmente quemadas (razón 0.02) — **subpredice**.
+- U-Net (calibrado): IoU 0.000, Dice 0.001, Brier 0.230; celdas con prob ≥ 0,5 en el último día: 0 frente a 4080 realmente quemadas (razón 0.00) — **subpredice**.
+- Ensamble: blend: IoU 0.000, Dice 0.001, Brier 0.235; celdas con prob ≥ 0,5 en el último día: 0 frente a 4080 realmente quemadas (razón 0.00) — **subpredice**.
 
 Descriptores del evento frente a los eventos de entrenamiento:
 
-- celdas realmente quemadas (último día): 446; entrenamiento 62–4080; percentil 73
-- variabilidad de la dirección diaria del viento (desv. circular, °): 33.25; entrenamiento 1.64–84.71; percentil 73
-- velocidad media del viento (m/s): 3.80; entrenamiento 1.17–5.43; percentil 91 (alto frente al entrenamiento)
-- desv. estándar de la elevación (m): 55.54; entrenamiento 8.78–267.96; percentil 64
-- pendiente media (°): 3.58; entrenamiento 0.55–17.55; percentil 64
-- fracción de celdas no combustibles: 0.11; entrenamiento 0.00–0.21; percentil 73
+- celdas realmente quemadas (último día): 4080; entrenamiento 62–820; percentil 100 **fuera del rango de entrenamiento**
+- variabilidad de la dirección diaria del viento (desv. circular, °): 25.13; entrenamiento 1.64–84.71; percentil 64
+- velocidad media del viento (m/s): 3.35; entrenamiento 1.87–5.43; percentil 55
+- desv. estándar de la elevación (m): 112.73; entrenamiento 8.78–90.82; percentil 100 **fuera del rango de entrenamiento**
+- pendiente media (°): 3.90; entrenamiento 0.55–4.34; percentil 73
+- fracción de celdas no combustibles: 0.20; entrenamiento 0.00–0.08; percentil 100 **fuera del rango de entrenamiento**
 
 **Hipótesis respaldadas por los descriptores** (no verificadas):
 
-- viento más intenso que en la mayoría de los eventos de entrenamiento: régimen poco representado (velocidad media del viento (m/s): 3.80).
+- combustible: gran parte de la zona es no combustible según WorldCover y la clasificación de combustible es un proxy grueso (fracción de celdas no combustibles: 0.20).
+- evento más chico que la mayoría de los de entrenamiento (fuera de la distribución por tamaño): el modelo vio pocos casos así (celdas realmente quemadas (último día): 4080).
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (desv. estándar de la elevación (m): 112.73).
 
 Para el U-Net, la subpredicción sistemática es coherente con un modelo entrenado desde cero con muy pocos eventos (sin preentrenamiento), que no aprendió a propagar el fuego: hipótesis, sin experimento que la aísle.
 
-### Evento 2728181583 (val) — val: no es evidencia fuera de muestra
+### Evento 2970931921 (val) — val: no es evidencia fuera de muestra
 
-- U-Net (calibrado): IoU 0.151, Dice 0.263, Brier 0.116; celdas con prob ≥ 0,5 en el último día: 1 frente a 278 realmente quemadas (razón 0.00) — **subpredice**.
+- U-Net (calibrado): IoU 0.041, Dice 0.079, Brier 0.054; celdas con prob ≥ 0,5 en el último día: 0 frente a 69 realmente quemadas (razón 0.00) — **subpredice**.
+- Ensamble: blend: IoU 0.041, Dice 0.079, Brier 0.046; celdas con prob ≥ 0,5 en el último día: 0 frente a 69 realmente quemadas (razón 0.00) — **subpredice**.
 
 Descriptores del evento frente a los eventos de entrenamiento:
 
-- celdas realmente quemadas (último día): 278; entrenamiento 62–4080; percentil 64
-- variabilidad de la dirección diaria del viento (desv. circular, °): 22.22; entrenamiento 1.64–84.71; percentil 55
-- velocidad media del viento (m/s): 4.15; entrenamiento 1.17–5.43; percentil 91 (alto frente al entrenamiento)
-- desv. estándar de la elevación (m): 90.68; entrenamiento 8.78–267.96; percentil 64
-- pendiente media (°): 4.26; entrenamiento 0.55–17.55; percentil 73
-- fracción de celdas no combustibles: 0.02; entrenamiento 0.00–0.21; percentil 27
+- celdas realmente quemadas (último día): 69; entrenamiento 62–820; percentil 9 (bajo frente al entrenamiento)
+- variabilidad de la dirección diaria del viento (desv. circular, °): 58.24; entrenamiento 1.64–84.71; percentil 91 (alto frente al entrenamiento)
+- velocidad media del viento (m/s): 1.17; entrenamiento 1.87–5.43; percentil 0 **fuera del rango de entrenamiento**
+- desv. estándar de la elevación (m): 267.96; entrenamiento 8.78–90.82; percentil 100 **fuera del rango de entrenamiento**
+- pendiente media (°): 17.55; entrenamiento 0.55–4.34; percentil 100 **fuera del rango de entrenamiento**
+- fracción de celdas no combustibles: 0.14; entrenamiento 0.00–0.08; percentil 100 **fuera del rango de entrenamiento**
 
 **Hipótesis respaldadas por los descriptores** (no verificadas):
 
-- viento más intenso que en la mayoría de los eventos de entrenamiento: régimen poco representado (velocidad media del viento (m/s): 4.15).
+- combustible: gran parte de la zona es no combustible según WorldCover y la clasificación de combustible es un proxy grueso (fracción de celdas no combustibles: 0.14).
+- evento más chico que la mayoría de los de entrenamiento (fuera de la distribución por tamaño): el modelo vio pocos casos así (celdas realmente quemadas (último día): 69).
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (desv. estándar de la elevación (m): 267.96).
+- terreno más complejo que en la mayoría de los eventos de entrenamiento: la propagación depende de la pendiente/elevación y a 250 m se resuelve de forma gruesa (pendiente media (°): 17.55).
+- viento cambiante no capturado por agregados diarios: la dirección varía y el modelo recibe un único vector medio por día (variabilidad de la dirección diaria del viento (desv. circular, °): 58.24).
+- viento más intenso que en la mayoría de los eventos de entrenamiento: régimen poco representado (velocidad media del viento (m/s): 1.17).
 
 Para el U-Net, la subpredicción sistemática es coherente con un modelo entrenado desde cero con muy pocos eventos (sin preentrenamiento), que no aprendió a propagar el fuego: hipótesis, sin experimento que la aísle.
 
@@ -266,34 +299,47 @@ make report             # solo lee bench/results/ y docs/
 
 | archivo | modelo | comando exacto | commit | semilla | remuestreos | eventos |
 |---|---|---|---|---|---|---|
-| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `358f3d446d39` | 42 | 1000 | 2 |
-| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42` | `358f3d446d39` | 42 | 1000 | 2 |
-| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42` | `d19511a902bb` | 42 | 1000 | 2 |
-| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42` | `d19511a902bb` | 42 | 1000 | 2 |
+| `baseline.json` | Autómata celular (sin calibrar) | `pyrocast-models backtest --n-bootstrap 1000 --seed 42` | `193c6bcc1a28` | 42 | 1000 | 2 |
+| `unet.json` | U-Net (calibrado) | `pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42` | `193c6bcc1a28` | 42 | 1000 | 2 |
+| `blend.json` | Ensamble: blend | `pyrocast-models backtest --model blend --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42` | `193c6bcc1a28` | 42 | 1000 | 2 |
+| `stacking.json` | Ensamble: stacking | `pyrocast-models backtest --model stacking --checkpoint runs/finetune_2026_v3/best.pt --n-bootstrap 1000 --seed 42` | `193c6bcc1a28` | 42 | 1000 | 2 |
 
-Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v2/best.pt --seed 42`, commit `c31c8c067d0a`, generados 2026-10-01T18:23:20Z, checkpoint `runs/finetune_2026_v2/best.pt` (huella sha256 `d40975a980f264a1…`), semilla 42, peso U-Net del blend 0.4.
+Artefactos (`report_artifacts.json`, `report_examples.npz`): comando `pyrocast-models report-artifacts --checkpoint runs/finetune_2026_v3/best.pt --seed 42`, commit `193c6bcc1a28`, generados 2026-10-01T18:53:31Z, checkpoint `runs/finetune_2026_v3/best.pt` (huella sha256 `547dac9896836b23…`), semilla 42, peso U-Net del blend 0.8.
 
 ### Fechas de los datos usados
 
 | event_id | split | primer día | último día | días | grilla (y×x) |
 |---|---|---|---|---|---|
-| 203187374 | test | 2026-01-15 | 2026-01-20 | 6 | 27×31 |
+| 1013976330 | test | 2025-11-15 | 2025-11-23 | 9 | 25×24 |
 | 2582836092 | test | 2026-01-18 | 2026-01-21 | 4 | 50×44 |
+| 12676775 | train | 2026-01-16 | 2026-01-20 | 5 | 49×40 |
+| 203187374 | train | 2026-01-15 | 2026-01-20 | 6 | 27×31 |
 | 775785671 | train | 2026-01-19 | 2026-01-20 | 2 | 25×36 |
-| 1013976330 | train | 2025-11-15 | 2025-11-23 | 9 | 25×24 |
 | 1214084367 | train | 2026-01-18 | 2026-01-21 | 4 | 27×31 |
 | 1262509675 | train | 2026-01-18 | 2026-01-20 | 3 | 46×35 |
-| 1277049523 | train | 2026-01-17 | 2026-01-23 | 7 | 147×88 |
 | 1482774057 | train | 2026-01-19 | 2026-01-21 | 3 | 29×29 |
 | 2030469600 | train | 2026-01-18 | 2026-01-23 | 6 | 84×45 |
 | 2320813586 | train | 2026-03-26 | 2026-03-29 | 4 | 33×28 |
-| 2970931921 | train | 2026-01-18 | 2026-01-27 | 10 | 23×30 |
+| 2728181583 | train | 2026-01-14 | 2026-01-18 | 5 | 38×34 |
 | 3051657321 | train | 2026-01-18 | 2026-01-22 | 5 | 55×55 |
 | 4199024687 | train | 2025-12-17 | 2025-12-18 | 2 | 25×25 |
-| 12676775 | val | 2026-01-16 | 2026-01-20 | 5 | 49×40 |
-| 2728181583 | val | 2026-01-14 | 2026-01-18 | 5 | 38×34 |
+| 1277049523 | val | 2026-01-17 | 2026-01-23 | 7 | 147×88 |
+| 2970931921 | val | 2026-01-18 | 2026-01-27 | 10 | 23×30 |
 
 Rango total de los eventos: 2025-11-15 a 2026-03-29. Cada evento se recorta a su primer día con fuego antes de evaluar (`docs/backtest-2026.md`). Resolución 250 m, paso diario.
+
+### Auditoría de fuga entre splits
+
+El split reparte *grupos* de eventos acoplados (<= 10 km y <= 3 días entre extensiones de fuego), no eventos sueltos: 11 grupos independientes. Para cada evento retenido, el vecino más cercano en OTRO split:
+
+| evento | split | vecino más cercano | su split | distancia (km) | separación (días) |
+|---|---|---|---|---|---|
+| 1013976330 | test | 2970931921 | val | 47.7 | 56 |
+| 1277049523 | val | 3051657321 | train | 14.2 | 0 |
+| 2582836092 | test | 2320813586 | train | 30.1 | 64 |
+| 2970931921 | val | 1013976330 | test | 47.7 | 56 |
+
+Ningún par de eventos acoplados quedó en splits distintos. Sigue habiendo dependencia climática gruesa (el mismo episodio sinóptico de enero de 2026 cubre casi todos los eventos): el split controla la fuga espacial y temporal directa, no la correlación meteorológica regional.
 
 ## 8. Documentos relacionados
 

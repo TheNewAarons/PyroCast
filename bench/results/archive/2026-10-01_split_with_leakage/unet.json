@@ -1,0 +1,53 @@
+{
+  "aggregate": {
+    "brier": {
+      "lower": 0.04394293984026212,
+      "point_estimate": 0.07000783053258253,
+      "upper": 0.09607272122490293
+    },
+    "dice": {
+      "lower": 0.10411810411810411,
+      "point_estimate": 0.3587637596196797,
+      "upper": 0.6134094151212554
+    },
+    "ece": {
+      "lower": 0.035252212015785,
+      "point_estimate": 0.06449904426272332,
+      "upper": 0.09374587650966165
+    },
+    "iou": {
+      "lower": 0.05491803278688524,
+      "point_estimate": 0.2486524320313027,
+      "upper": 0.44238683127572015
+    }
+  },
+  "command": "pyrocast-models backtest --model unet --checkpoint runs/finetune_2026_v2/best.pt --n-bootstrap 1000 --seed 42",
+  "confidence": 0.95,
+  "config": {
+    "calibration": "runs/finetune_2026_v2/best.calibrator.pt",
+    "checkpoint": "runs/finetune_2026_v2/best.pt"
+  },
+  "ece_bins": 10,
+  "git_commit": "358f3d446d3977007422b1524f1ea150b2fa9e3d",
+  "model_name": "unet",
+  "n_bootstrap": 1000,
+  "n_events": 2,
+  "per_event": [
+    {
+      "brier": 0.04394293984026212,
+      "dice": 0.6134094151212554,
+      "ece": 0.035252212015785,
+      "event_id": 203187374,
+      "iou": 0.44238683127572015
+    },
+    {
+      "brier": 0.09607272122490293,
+      "dice": 0.10411810411810411,
+      "ece": 0.09374587650966165,
+      "event_id": 2582836092,
+      "iou": 0.05491803278688524
+    }
+  ],
+  "seed": 42,
+  "split": "test"
+}

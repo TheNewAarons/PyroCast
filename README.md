@@ -69,10 +69,10 @@ usa 30 m / 3 h); no es equivalente. Detalle en [`CLAUDE.md`](CLAUDE.md) y
 <!-- results-summary:start (generado por `make report`, no editar a mano) -->
 | Modelo | IoU ↑ | Dice ↑ | Brier ↓ | ECE ↓ |
 |---|---|---|---|---|
-| Autómata celular (sin calibrar) | 0.319 | 0.483 | 0.092 | 0.091 |
-| U-Net (calibrado) | 0.249 | 0.359 | 0.070 | 0.064 |
-| Ensamble: blend | 0.334 | 0.499 | 0.075 | 0.074 |
-| Ensamble: stacking | 0.513 | 0.677 | 0.058 | 0.038 |
+| Autómata celular (sin calibrar) | 0.398 | 0.560 | 0.089 | 0.086 |
+| U-Net (calibrado) | 0.033 | 0.063 | 0.095 | 0.093 |
+| Ensamble: blend | 0.033 | 0.063 | 0.081 | 0.078 |
+| Ensamble: stacking | 0.486 | 0.655 | 0.061 | 0.048 |
 
 Backtest sobre incendios reales de Chile 2025-2026, media sobre **2 eventos de test**. Con tan pocos eventos **no es una comparación estadísticamente robusta**: ningún modelo queda demostrado como mejor. Intervalos, mapas, calibración y análisis de fallas en [`docs/results.md`](docs/results.md).
 <!-- results-summary:end -->

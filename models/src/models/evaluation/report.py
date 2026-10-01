@@ -717,6 +717,37 @@ def _methodology(doc: Doc, inp: Inputs) -> None:
     doc.p(f"Rango total de los eventos: {min(firsts)} a {max(lasts)}. Cada evento se recorta a "
           f"su primer día con fuego antes de evaluar (`docs/backtest-2026.md`). Resolución "
           f"{art['resolution_m']:.0f} m, paso diario.")
+    _split_audit(doc, inp)
+
+
+def _split_audit(doc: Doc, inp: Inputs) -> None:
+    audit = inp.artifacts.get("split_audit") if inp.artifacts else None
+    doc.h(3, "Auditoría de fuga entre splits")
+    if not audit:
+        doc.p("**No disponible**: estos artefactos no incluyen la auditoría de fuga "
+              "(`make report-artifacts`).")
+        return
+    doc.p(
+        f"El split reparte *grupos* de eventos acoplados (<= {audit['max_gap_km']:.0f} km y "
+        f"<= {audit['max_gap_days']} días entre extensiones de fuego), no eventos sueltos: "
+        f"{audit['n_groups']} grupos independientes. Para cada evento retenido, el vecino más "
+        f"cercano en OTRO split:"
+    )
+    doc.table(
+        ["evento", "split", "vecino más cercano", "su split", "distancia (km)",
+         "separación (días)"],
+        [[str(r["event_id"]), r["split"], str(r["nearest_event_id"]), r["nearest_split"],
+          f"{r['gap_km']:.1f}", str(r["gap_days"])] for r in audit["nearest_cross_split"]],
+    )
+    if audit["violations"]:
+        doc.p("**FUGA DETECTADA**: pares acoplados en splits distintos:")
+        doc.ul([f"{v['event_a']} ({v['split_a']}) y {v['event_b']} ({v['split_b']}): "
+                f"{v['gap_km']:.1f} km, {v['gap_days']} días" for v in audit["violations"]])
+    else:
+        doc.p("Ningún par de eventos acoplados quedó en splits distintos. Sigue habiendo "
+              "dependencia climática gruesa (el mismo episodio sinóptico de enero de 2026 cubre "
+              "casi todos los eventos): el split controla la fuga espacial y temporal directa, "
+              "no la correlación meteorológica regional.")
 
 
 def _related(doc: Doc, inp: Inputs) -> None:

@@ -1,24 +1,24 @@
 {
   "aggregate": {
     "brier": {
-      "lower": 0.07609681923991135,
-      "point_estimate": 0.089348318490659,
+      "lower": 0.08186027896848513,
+      "point_estimate": 0.09223004835494589,
       "upper": 0.10259981774140664
     },
     "dice": {
       "lower": 0.4469742360695027,
-      "point_estimate": 0.5603741116381629,
-      "upper": 0.673773987206823
+      "point_estimate": 0.4832962378650801,
+      "upper": 0.5196182396606575
     },
     "ece": {
-      "lower": 0.0708051073625761,
-      "point_estimate": 0.08562612769212039,
+      "lower": 0.08163097494313536,
+      "point_estimate": 0.09103906148240001,
       "upper": 0.10044714802166468
     },
     "iou": {
       "lower": 0.28780864197530864,
-      "point_estimate": 0.39792361359215594,
-      "upper": 0.5080385852090032
+      "point_estimate": 0.31940575365241075,
+      "upper": 0.3510028653295129
     }
   },
   "command": "pyrocast-models backtest --n-bootstrap 1000 --seed 42",
@@ -41,17 +41,17 @@
     "wind_coefficient": 0.2
   },
   "ece_bins": 10,
-  "git_commit": "193c6bcc1a28c058e47649de376922959820f756",
+  "git_commit": "358f3d446d3977007422b1524f1ea150b2fa9e3d",
   "model_name": "cellular_automata",
   "n_bootstrap": 1000,
   "n_events": 2,
   "per_event": [
     {
-      "brier": 0.07609681923991135,
-      "dice": 0.673773987206823,
-      "ece": 0.0708051073625761,
-      "event_id": 1013976330,
-      "iou": 0.5080385852090032
+      "brier": 0.08186027896848513,
+      "dice": 0.5196182396606575,
+      "ece": 0.08163097494313536,
+      "event_id": 203187374,
+      "iou": 0.3510028653295129
     },
     {
       "brier": 0.10259981774140664,

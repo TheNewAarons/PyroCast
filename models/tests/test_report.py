@@ -279,6 +279,10 @@ def test_artifacts_to_report_end_to_end_with_fixture_checkpoint(tmp_path, monkey
     assert {r["split"] for r in data["model_events"]} == {"test", "val"}
     assert {r["model"] for r in data["model_events"]} == set(MODELS)
     assert len(data["events"]) == 7
+    # los 7 eventos de fixture están en el MISMO lugar y día: la auditoría debe
+    # denunciar la fuga (el split de fixture no está agrupado)
+    assert data["split_audit"]["violations"] and data["split_audit"]["n_groups"] == 1
+    assert {r["split"] for r in data["split_audit"]["nearest_cross_split"]} == {"val", "test"}
     assert set(data["calibration"]["unet_one_step"]) == {"val", "test"}
     assert (results / "report_examples.npz").exists()
 
@@ -286,6 +290,7 @@ def test_artifacts_to_report_end_to_end_with_fixture_checkpoint(tmp_path, monkey
     text = md.read_text()
     assert "map_test_6.png" in text and "calibration_unet.png" in text
     assert "No hay resultados de backtest" in text  # sin JSON de modelos en este bench
+    assert "**FUGA DETECTADA**" in text
 
 
 def test_readme_summary_block_is_generated_from_results_and_leaves_the_rest_intact(
@@ -316,3 +321,30 @@ def test_readme_without_markers_or_missing_is_left_alone(workspace, tmp_path):
     readme.write_text("sin marcadores\n")
     build_report(results, docs, tmp_path / "out2")
     assert readme.read_text() == "sin marcadores\n"
+
+
+def _with_audit(results: Path, violations: list[dict]) -> None:
+    art = json.loads((results / "report_artifacts.json").read_text())
+    art["split_audit"] = {
+        "max_gap_km": 10.0, "max_gap_days": 3, "n_groups": 7, "violations": violations,
+        "nearest_cross_split": [{"event_id": 22, "split": "test", "nearest_event_id": 5,
+                                 "nearest_split": "train", "gap_km": 12.3, "gap_days": 0}],
+    }
+    (results / "report_artifacts.json").write_text(json.dumps(art))
+
+
+def test_report_shows_split_audit_table_and_no_leak_statement(workspace, tmp_path):
+    results, docs = workspace
+    _with_audit(results, [])
+    text = build_report(results, docs, tmp_path / "out")[0].read_text()
+    assert "### Auditoría de fuga entre splits" in text
+    assert "| 22 | test | 5 | train | 12.3 | 0 |" in text
+    assert "Ningún par de eventos acoplados quedó en splits distintos" in text
+
+
+def test_report_flags_a_detected_split_leak_loudly(workspace, tmp_path):
+    results, docs = workspace
+    _with_audit(results, [{"event_a": 22, "split_a": "test", "event_b": 7, "split_b": "val",
+                           "gap_km": 0.0, "gap_days": 0}])
+    text = build_report(results, docs, tmp_path / "out")[0].read_text()
+    assert "**FUGA DETECTADA**" in text and "22 (test) y 7 (val)" in text

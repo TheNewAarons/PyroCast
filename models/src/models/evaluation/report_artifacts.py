@@ -21,6 +21,15 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
+from features.dataset.split import (
+    DEFAULT_MAX_GAP_DAYS,
+    DEFAULT_MAX_GAP_KM,
+    find_split_leakage,
+    footprint_from_tensor,
+    footprint_gap_days,
+    footprint_gap_km,
+    group_events,
+)
 from shared.model_protocol import FireSpreadModel
 
 from models.cellular_automata.model import CellularAutomatonModel
@@ -178,6 +187,7 @@ def build_artifacts(
         describe_event(event, split, flammability)
         for split in ("train", "val", "test") for event in events[split]
     ]
+    split_audit = _split_audit(events, splits)
     resolution = float(events["test"][0].attrs["resolution_m"]) if events["test"] else 250.0
 
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +201,8 @@ def build_artifacts(
         "checkpoint": str(checkpoint),
         "checkpoint_fingerprint": _checkpoint_fingerprint(checkpoint),
         "seed": seed, "blend_weight_unet": weight, "resolution_m": resolution,
-        "splits": splits, "events": descriptors, "model_events": model_events,
+        "splits": splits, "split_audit": split_audit, "events": descriptors,
+        "model_events": model_events,
         "calibration": {"unet_one_step": calibration_one_step},
         "reliability_backtest": reliability,
         "examples": {"file": npz_name},
@@ -199,6 +210,39 @@ def build_artifacts(
     out = results_dir / "report_artifacts.json"
     out.write_text(json.dumps(payload, sort_keys=True, indent=2))
     return out
+
+
+def _split_audit(
+    events: dict[str, list[xr.DataArray]], splits: dict[str, list[int]]
+) -> dict[str, Any]:
+    """Auditoría de fuga espacio-temporal entre splits (docs/review.md, C1):
+    pares acoplados en splits distintos y, por evento retenido, el vecino más
+    cercano en OTRO split."""
+    footprints = {
+        int(e.attrs["event_id"]): footprint_from_tensor(e)
+        for split_events in events.values() for e in split_events
+    }
+    where = {e: s for s, ids in splits.items() for e in ids}
+    nearest: list[dict[str, Any]] = []
+    for eid in sorted(footprints):
+        if where.get(eid) not in ("val", "test"):
+            continue
+        others = [o for o in footprints if where.get(o) != where[eid]]
+        best = min(others, key=lambda o: (
+            footprint_gap_km(footprints[eid], footprints[o]), footprint_gap_days(
+                footprints[eid], footprints[o])))
+        nearest.append({
+            "event_id": eid, "split": where[eid], "nearest_event_id": best,
+            "nearest_split": where[best],
+            "gap_km": footprint_gap_km(footprints[eid], footprints[best]),
+            "gap_days": footprint_gap_days(footprints[eid], footprints[best]),
+        })
+    return {
+        "max_gap_km": DEFAULT_MAX_GAP_KM, "max_gap_days": DEFAULT_MAX_GAP_DAYS,
+        "n_groups": len(group_events(footprints)),
+        "violations": find_split_leakage(splits, footprints),
+        "nearest_cross_split": nearest,
+    }
 
 
 def _exact_command_artifacts(checkpoint: Path, seed: int) -> str:
