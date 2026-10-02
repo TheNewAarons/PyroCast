@@ -40,13 +40,15 @@ El bundle total de la función queda en **~215 MB** (dependencias sin `torch` + 
 
 ## Paso a paso
 
-### 0. Antes de empezar (en tu terminal)
+### 0. Antes de empezar
 
-1. **Subir los commits.** Tu `main` local va por delante de GitHub, y Vercel despliega lo que está en GitHub:
+**Estado al 2026-10-02:** el código ya está en `main` en GitHub y el Release `data-2026-10-01` ya está publicado. Puedes ir directo al paso 1. Lo de abajo solo hace falta si cambias los datos.
+
+1. **Subir los commits.** Vercel despliega lo que está en GitHub, no lo de tu máquina:
    ```bash
    git push origin main
    ```
-2. **Publicar el paquete de datos** como GitHub Release. El nombre y el sha256 ya están en `deploy/vercel/data-bundle.json`:
+2. **Publicar el paquete de datos** como GitHub Release. El nombre y el sha256 están en `deploy/vercel/data-bundle.json`:
    ```bash
    uv run --package serving python scripts/build_deploy_data.py --tag data-2026-10-01
    tar -xOzf dist/pyrocast-data-2026-10-01.tar.gz processed/ATTRIBUTION.txt > /tmp/notes.txt
@@ -111,6 +113,11 @@ Hoy esas variables se rellenan con marcadores en `deploy/vercel/app.py` porque l
 | `CDS_*`, `COPERNICUS_DATASPACE_*`, `POSTGRES_*` | (ninguno) | — | Solo las usa el pipeline local | No; `app.py` pone marcadores. **No subas** tus claves reales de CDS/Copernicus a Vercel |
 
 GitHub Actions no necesita ningún secreto: el CI usa datos sintéticos y no despliega.
+
+**Si todos los jobs del CI fallan en ~3 segundos sin logs** (como pasó en las corridas de `main` hasta el 2026-10-02), el problema no es el código: GitHub no llegó a asignar un runner. Revisa en GitHub:
+1. **Settings → Actions → General**: "Allow all actions and reusable workflows" activado.
+2. **Settings (de tu cuenta) → Billing and plans**: que no haya un aviso de cuenta bloqueada o pago pendiente. En repos **públicos** los minutos de Actions son gratis e ilimitados; en repos privados el plan Free trae 2000 min/mes.
+3. Después, en la pestaña **Actions**, abre la corrida y usa **Re-run all jobs**.
 
 Secretos: `.env`, `.env.local`, `.vercel/` y `dist/` están en `.gitignore`; `deploy/vercel/.env.example` documenta las variables. Un test (`shared/tests/test_no_secrets.py`) falla si se versiona algo con forma de credencial.
 

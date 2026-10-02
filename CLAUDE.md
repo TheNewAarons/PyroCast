@@ -43,6 +43,9 @@ Fuentes abiertas (FIRMS, Copernicus DEM, ERA5-Land, Sentinel-2, ESA WorldCover)
         │
         ▼
   serving/     →  API FastAPI + mapa web (Leaflet)
+        │
+        ▼
+  deploy/vercel/ →  despliegue gratuito (un proyecto Vercel, datos compactos vía GitHub Release; ver DEPLOY.md)
 ```
 
 ## Fuentes de datos (todas abiertas, requieren API key gratuita)
@@ -88,6 +91,7 @@ make serve                          # levanta la API + mapa web
 make test / lint / typecheck
 make audit                           # pip-audit sobre uv.lock (también corre en CI)
 make demo                             # API + mapa con datos SINTÉTICOS, sin credenciales
+uv run --package serving python scripts/build_deploy_data.py --tag data-AAAA-MM-DD   # paquete de datos para Vercel (DEPLOY.md)
 ```
 
 ## Forma de trabajar

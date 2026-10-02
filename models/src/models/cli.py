@@ -161,6 +161,11 @@ def backtest(
     guarda el resultado en bench/results/<model>.json y en PostGIS
     (model_run + evaluation_result). Requiere que `pyrocast-features
     build-dataset` ya haya corrido -- ver docs/dataset-card.md."""
+    # los argumentos se validan antes de tocar el disco: sin dataset local,
+    # el error útil es el del argumento faltante, no un FileNotFoundError
+    if model != "cellular_automata" and checkpoint is None:
+        typer.echo(f"--model {model} requiere --checkpoint.")
+        raise typer.Exit(code=1)
     settings = get_settings()
     dataset_dir = settings.data_processed_dir / "dataset"
     events = load_test_events(dataset_dir)

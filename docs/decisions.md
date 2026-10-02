@@ -1079,3 +1079,13 @@ Cuatro cambios que alteraron los resultados publicados (todo se reentrenó y ree
 - **H2/H3**: los eventos de entrenamiento se recortan a su primer día con fuego igual que en la evaluación (`models/events.py`), y las métricas del backtest excluyen el día 0 (`exclude_anchor_day=True`).
 
 Sin dependencias nuevas. La decisión de modelo por defecto en `serving/` (autómata celular) se mantiene, con razones actualizadas en `docs/backtest-2026.md` sección 8.
+
+## Despliegue gratuito en Vercel (deploy/vercel, DEPLOY.md)
+
+Se pidió un despliegue "Django + React + Neon + JWT" en dos proyectos de Vercel. El repositorio no tiene esa estructura: la parte web es una sola app FastAPI (`serving/`) que sirve la API y el mapa (Jinja2 + Leaflet por CDN), sin base de datos, usuarios ni archivos subidos. Se adaptó el plan:
+
+- **Un solo proyecto de Vercel**, Root Directory `deploy/vercel`, con su propio `pyproject.toml` + `uv.lock` (solo dependencias de ejecución de `serving/`, versiones fijas, sin `torch`) para quedar bajo el límite de 500 MB por función. `build.py` (solo biblioteca estándar) copia el código del monorepo a `_vendor/`; `app.py` construye la app real con `create_app()` sin cambios. No agrega dependencias al workspace: el proyecto de despliegue es independiente.
+- **Sin Neon, migraciones, JWT, CORS cruzado ni Cloudinary**: no hay qué guardar ni a quién autenticar; agregarlos sería infraestructura sin uso. CORS queda en "ninguno" (mismo origen) y configurable por `CORS_ALLOW_ORIGINS`.
+- **Datos**: los 2.1 GB de `data/processed/` no caben. `scripts/build_deploy_data.py` arma un paquete determinista de 32 MB (clima promediado a 2 km, por debajo de la resolución nativa de ERA5-Land; predicciones idénticas a 4 decimales en 5 casos reales) publicado como GitHub Release y verificado por sha256 en el build.
+- **`/api/health/`** verifica capas estáticas, rango de clima y modelo cargado (el equivalente de "conexión a la base" para esta app); `/healthz` queda como liveness.
+- **CI**: el job `deploy-smoke` reproduce el build de Vercel con datos sintéticos y falla si el bundle supera 450 MB. Vercel despliega por su cuenta; Actions no despliega.
