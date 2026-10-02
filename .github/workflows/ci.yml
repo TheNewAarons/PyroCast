@@ -22,7 +22,7 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
-      - name: Typecheck (mypy --strict: shared + features + serving)
+      - name: "Typecheck (mypy --strict: shared + features + serving)"
         run: uv run mypy --strict shared/src features/src serving/src
 
       - name: Test (all workspace members)
@@ -52,6 +52,48 @@ jobs:
         run: |
           uv export --frozen --all-packages --no-hashes --no-emit-workspace -o requirements-audit.txt
           uvx pip-audit -r requirements-audit.txt --no-deps --disable-pip --progress-spinner off
+
+  deploy-smoke:
+    # Reproduce el build del proyecto de Vercel (deploy/vercel) con datos
+    # sintéticos: dependencias mínimas fijadas, copia del código, verificación
+    # del sha256 del paquete de datos, arranque de la app y límite de 500 MB.
+    # No despliega: Vercel despliega solo al hacer push (ver DEPLOY.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Paquete de datos de demo
+        run: |
+          uv sync --all-packages --group dev
+          uv run --package serving python -m serving.demo_data demo_data/processed
+          uv run --package serving python -c "from pathlib import Path; from serving.deploy_bundle import build_bundle; i = build_bundle(Path('demo_data/processed'), Path('dist/demo.tar.gz')); print(i.sha256)" > dist-sha.txt
+
+      - name: Build como en Vercel
+        working-directory: deploy/vercel
+        run: |
+          uv sync --frozen --group dev
+          PYROCAST_DATA_URL=../../dist/demo.tar.gz PYROCAST_DATA_SHA256=$(cat ../../dist-sha.txt) .venv/bin/python build.py
+
+      - name: Arranque y tamaño del bundle
+        working-directory: deploy/vercel
+        run: |
+          .venv/bin/python - <<'PY'
+          from fastapi.testclient import TestClient
+          import app as entry
+          with TestClient(entry.app) as client:
+              assert client.get("/api/health/").status_code == 200
+              assert client.get("/").status_code == 200
+              r = client.post("/predict", json={"lat": -37.5, "lon": -72.5, "date": "2026-01-10", "horizon_days": 3})
+              assert r.status_code == 200, r.text
+          PY
+          size=$(du -sm .venv/lib/python3.12/site-packages _vendor data | awk '{s+=$1} END {print s}')
+          echo "bundle aproximado: ${size} MB"
+          test "$size" -lt 450
 
   docker:
     runs-on: ubuntu-latest
