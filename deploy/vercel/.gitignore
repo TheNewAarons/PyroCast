@@ -1,0 +1,7 @@
+# generados por build.py (en Vercel y en pruebas locales)
+_vendor/
+data/
+.venv/
+.vercel/
+.env
+.env.local

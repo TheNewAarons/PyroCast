@@ -35,3 +35,8 @@ runs/
 
 # Datos sintéticos de `make demo`
 demo_data/
+
+# Despliegue (DEPLOY.md): paquetes de datos generados y estado local de Vercel
+dist/
+.vercel/
+.env.local

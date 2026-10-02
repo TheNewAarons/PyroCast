@@ -1,0 +1,38 @@
+# Proyecto de Vercel para PyroCast (Root Directory = deploy/vercel). Ver DEPLOY.md.
+# Solo dependencias de EJECUCIÓN de serving/ (sin torch, sklearn, matplotlib,
+# pyarrow ni clientes de ingesta): el bundle de una función Python de Vercel tiene
+# un límite de 500 MB. Versiones fijas; uv.lock fija también las transitivas.
+[project]
+name = "pyrocast-web"
+version = "0.1.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "fastapi==0.141.1",
+    "jinja2==3.1.6",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "numpy==2.5.3",
+    "rasterio==1.5.1",
+    "pyproj==3.8.0",
+    "xarray==2026.7.0",
+    "rioxarray==0.23.0",
+    "shapely==2.1.2",
+    "affine==3.0.1",
+    "requests==2.34.2",
+    "typer==0.27.2",
+]
+
+[dependency-groups]
+dev = ["httpx==0.28.1", "uvicorn==0.39.0"]
+
+[tool.vercel]
+entrypoint = "app:app"
+
+[tool.vercel.scripts]
+# copia el código de los paquetes del monorepo y descarga los datos (build.py)
+build = "python build.py"
+
+[tool.uv]
+package = false
+# Vercel instala solo lo de ejecución; el grupo dev (prueba local) se pide con --group dev
+default-groups = []
