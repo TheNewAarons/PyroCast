@@ -159,6 +159,19 @@ class PredictionService:
             )
         return sources
 
+    @property
+    def model_name(self) -> str:
+        return self._loaded.name
+
+    def static_layers_problem(self) -> str | None:
+        """None si las capas estáticas (DEM, pendiente, orientación,
+        combustible) están; si no, el mensaje de por qué no (para /api/health/)."""
+        try:
+            self._resolve_sources([])
+        except StaticLayersUnavailableError as exc:
+            return exc.message
+        return None
+
     def weather_range(self) -> tuple[dt.date, dt.date] | None:
         """Primer y último día con TODO el clima que requiere el modelo
         (None si no hay ninguno procesado). Solo informativo para la UI:
