@@ -180,6 +180,10 @@ sección 9 y en [`docs/results.md`](docs/results.md) sección 7. Si una fuente
 se cae o se agota una cuota, el comando termina con un mensaje que nombra la
 fuente y qué hacer, y lo ya descargado queda en caché.
 
+## Despliegue
+
+Guía para publicarlo gratis en Vercel (un solo proyecto, datos compactos de 32 MB, sin base de datos): [`DEPLOY.md`](DEPLOY.md).
+
 ## API
 
 `POST /predict`, `GET /active-fires`, `GET /healthz` y el mapa en `/`. Todas
