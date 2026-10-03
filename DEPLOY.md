@@ -44,7 +44,7 @@ El bundle total de la función queda en **~215 MB** (dependencias sin `torch` + 
 
 ### 0. Antes de empezar
 
-**Estado al 2026-10-02:** el código ya está en `main` en GitHub y el Release `data-2026-10-01` ya está publicado. Puedes ir directo al paso 1. Lo de abajo solo hace falta si cambias los datos.
+**Estado al 2026-10-02:** el código ya está en `main` en GitHub y el Release `data-2026-10-01` ya está publicado. El proyecto de Vercel ya existe y está desplegado (paso 2b). Los pasos 1 y 2 solo hacen falta para recrearlo desde el panel o enlazarlo a GitHub; lo de abajo, solo si cambias los datos.
 
 1. **Subir los commits.** Vercel despliega lo que está en GitHub, no lo de tu máquina:
    ```bash
