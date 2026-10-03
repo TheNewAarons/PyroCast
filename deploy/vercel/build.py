@@ -36,6 +36,33 @@ def vendor_sources(repo_root: Path = REPO_ROOT, target: Path = HERE / "_vendor")
     shutil.copytree(repo_root / "serving" / "web", target / "serving" / "web", ignore=_IGNORE)
 
 
+# Bibliotecas del sistema que los wheels de rasterio (GDAL) esperan encontrar y que
+# el runtime de funciones de Vercel no trae (verificado: "libexpat.so.1: cannot open
+# shared object file"). Se copian desde la imagen de build a _vendor/lib y app.py
+# las precarga antes de importar rasterio.
+SYSTEM_LIBS = ("libexpat.so.1",)
+_LIB_DIRS = ("/usr/lib64", "/lib64", "/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu",
+             "/usr/lib")
+
+
+def vendor_system_libs(target: Path = HERE / "_vendor" / "lib") -> list[str]:
+    """Copia las bibliotecas de SYSTEM_LIBS que existan en esta máquina (solo Linux;
+    en macOS no aplica). Devuelve las que no encontró."""
+    import sys
+
+    if not sys.platform.startswith("linux"):
+        return []
+    target.mkdir(parents=True, exist_ok=True)
+    missing = []
+    for name in SYSTEM_LIBS:
+        found = next((Path(d) / name for d in _LIB_DIRS if (Path(d) / name).exists()), None)
+        if found is None:
+            missing.append(name)
+            continue
+        shutil.copy2(found.resolve(), target / name)
+    return missing
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -79,6 +106,10 @@ def main() -> None:
 
     vendor_sources()
     print(f"Código copiado a {HERE / '_vendor'}")
+    missing = vendor_system_libs()
+    if missing:
+        print(f"AVISO: no se encontraron {missing} en la imagen de build: rasterio puede "
+              f"fallar al importar en el runtime.")
     if args.skip_data:
         return
     manifest = json.loads((HERE / "data-bundle.json").read_text())

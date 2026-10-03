@@ -4,11 +4,18 @@
 compactos en `data/processed/`. Aquí solo se ajusta `sys.path` y el entorno, y
 se construye la app real de `serving/` sin cambios.
 """
+import ctypes
 import os
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+# Bibliotecas del sistema que el runtime de Vercel no trae y que rasterio necesita
+# (build.py las copia a _vendor/lib). RTLD_GLOBAL: así el cargador ya las tiene
+# cuando rasterio las pide por nombre.
+for _lib in sorted((HERE / "_vendor" / "lib").glob("*.so*")):
+    ctypes.CDLL(str(_lib), mode=ctypes.RTLD_GLOBAL)
 for package in ("shared", "features", "models", "ingestion", "serving"):
     sys.path.insert(0, str(HERE / "_vendor" / package / "src"))
 

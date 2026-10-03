@@ -1,0 +1,16 @@
+# Despliegue con la CLI de Vercel desde la raíz (DEPLOY.md): subir SOLO lo que
+# build.py necesita. Nunca datos locales (3+ GB), checkpoints, entornos ni secretos.
+/*
+!/shared
+!/features
+!/models
+!/ingestion
+!/serving
+!/deploy
+/deploy/vercel/.venv
+/deploy/vercel/_vendor
+/deploy/vercel/data
+/deploy/vercel/.env*
+**/__pycache__
+**/tests
+**/.pytest_cache

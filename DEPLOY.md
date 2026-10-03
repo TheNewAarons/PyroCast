@@ -4,6 +4,8 @@
 
 Guía para publicar el mapa y la API de PyroCast en `*.vercel.app` usando solo planes gratuitos, sin tarjeta.
 
+**Desplegado (2026-10-02):** <https://pyrocast-hazel.vercel.app>. Proyecto de Vercel `pyrocast`, creado y desplegado con la CLI (ver "Despliegue con la CLI"); todavía sin enlace a GitHub, así que un push **no** redespliega solo.
+
 ## Qué se despliega (y por qué no es el plan "Django + React + Neon + JWT")
 
 El repositorio no tiene `backend/` Django ni `frontend/` React. La parte web es **una sola app FastAPI** (`serving/`) que sirve la API (`/predict`, `/active-fires`, `/api/health/`) **y** el mapa (Jinja2 + Leaflet por CDN, sin build de frontend). Esa app:
@@ -74,6 +76,23 @@ El bundle total de la función queda en **~215 MB** (dependencias sin `torch` + 
 6. **Deploy**. El primer build tarda unos minutos (dependencias geoespaciales y descarga de datos).
 
 En **Settings → Build and Deployment → Root Directory**, deja **activado** "Include files outside the root directory in the Build Step" (viene activado). `build.py` copia el código de `../../shared`, `../../serving`, etc.
+
+### 2b. Despliegue con la CLI (lo que se usó)
+
+Si la app de GitHub de Vercel no está instalada, Vercel no puede enlazar el repo. Así se desplegó:
+
+```bash
+npx vercel login                                   # una vez
+# proyecto con Root Directory = deploy/vercel (la CLI no fija Root Directory al crear)
+echo '{"name":"pyrocast","framework":"fastapi","rootDirectory":"deploy/vercel"}' > /tmp/p.json
+npx vercel api /v11/projects -X POST --input /tmp/p.json
+npx vercel link --yes --project pyrocast           # desde la raíz del repo (crea .vercel/)
+npx vercel deploy --prod --yes                     # sube solo lo que permite .vercelignore
+```
+
+`.vercelignore` (en la raíz) sube únicamente los paquetes y `deploy/`: nunca `data/`, `runs/`, `.venv` ni secretos. Para que cada push despliegue solo: instala la app de Vercel en GitHub (<https://github.com/apps/vercel>, elige el repo `PyroCast`) y luego ejecuta `npx vercel git connect`.
+
+**Nota técnica:** los wheels de `rasterio` necesitan `libexpat.so.1`, que el runtime de funciones de Vercel no trae (primer despliegue: `ImportError: libexpat.so.1`). `build.py` la copia desde la imagen de build a `_vendor/lib/` y `app.py` la precarga antes de importar `rasterio`.
 
 ### 3. Comprobar
 
