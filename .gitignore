@@ -40,3 +40,4 @@ demo_data/
 dist/
 .vercel/
 .env.local
+.coverage
